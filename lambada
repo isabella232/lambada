@@ -22,7 +22,7 @@ for module in args.modules:
 	fileobj.close()
 
 	try:
-		lambada.move(mod.__dict__, local=args.local, module=filename)
+		lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug)
 	except Exception as e:
 		print("Exception: {:s}".format(str(e)))
 		if args.debug:

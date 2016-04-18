@@ -1,6 +1,7 @@
 import inspect
 import ast
 import codegen
+#import astor.codegen as codegen
 import tempfile
 import zipfile
 import subprocess
@@ -13,6 +14,11 @@ def printlambada(*s):
 	s += (reset,)
 	print(red, "»» Lambada:", *s)
 
+def lambadamonad(s):
+	green = "\033[1;32m"
+	reset = "\033[0;0m"
+	print(green, "»» Lambada Monad:", s, reset)
+
 class FuncListener(ast.NodeVisitor):
 	def __init__(self, functionname, functions):
 		ast.NodeVisitor.__init__(self)
@@ -23,6 +29,7 @@ class FuncListener(ast.NodeVisitor):
 		self.args = {}
 		self.bodies = {}
 		self.deps = {}
+		self.features = {}
 
 	def checkdep(self, dep):
 		if dep in self.functions and not dep in self.deps.get(self.currentfunction, []):
@@ -58,8 +65,10 @@ class FuncListener(ast.NodeVisitor):
 				#printlambada("AST: linekind", linekind, dir(linekind))
 				if isinstance(linekind, ast.Expr):
 					#printlambada("AST: match", linekind.value, linekind.value.func.id)
-					if linekind.value.func.id in ("print", "input"):
+					if linekind.value.func.id in ("input",):
 						self.tainted.append(node.name)
+					elif linekind.value.func.id in ("print",):
+						self.features.setdefault(node.name, []).append("print")
 		if not node.name in self.tainted:
 			for arg in node.args.args:
 				self.args.setdefault(node.name, []).append(arg.arg)
@@ -70,11 +79,22 @@ class FuncListener(ast.NodeVisitor):
 			for linekind in node.body:
 				if isinstance(linekind, ast.Return):
 					a = ast.Assign([ast.Name("ret", ast.Store())], linekind.value)
-					r = ast.Return(ast.Dict([ast.Str("ret")], [ast.Name("ret", ast.Load())]))
+					#r = ast.Return(ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())]))
+					d = ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())])
+					b = ast.Assign([ast.Name("ret", ast.Store())], d)
+					r = ast.Return(ast.Name("ret", ast.Load()))
+					g = ast.Global(["__lambdalog"])
+					z = ast.Assign([ast.Name("__lambdalog", ast.Store())], ast.Str(""))
+
+					# FIXME: always assume log because here the monadic situation through dependencies is not yet clear
+					#if "print" in self.features.get(node.name, []):
+					#	r = ast.Return(ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())]))
+					#else:
+					#	r = ast.Return(ast.Dict([ast.Str("ret")], [ast.Name("ret", ast.Load())]))
 					#print("//return", linekind.value)
 					#print(ast.dump(a, annotate_fields=False))
 					#print(ast.dump(r, annotate_fields=False))
-					newbody += [a, r]
+					newbody = [g] + newbody + [a, b, z, r]
 					#Assign([Name('ret', Store())], ...)
 					#Return(Name('ret', Load()))
 				else:
@@ -102,7 +122,7 @@ def analyse(functionname, functions, module):
 			if dep in fl.tainted:
 				printlambada("AST: dependency {:s} -> {:s} leads to tainting".format(function, dep))
 				fl.tainted.append(function)
-	return fl.tainted, fl.args, fl.bodies, fl.deps
+	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features
 
 template = """
 def FUNCNAME_remote(event, context):
@@ -128,7 +148,10 @@ def FUNCNAME(PARAMETERSHEAD):
 		proc = subprocess.Popen(["rm", "_lambada.log"])
 		if "errorMessage" in jsonoutput:
 			raise Exception("Lambda Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
-	return json.loads(jsonoutput)["ret"]
+	output = json.loads(jsonoutput)
+	if "log" in output:
+		lambada.lambadamonad(output["log"])
+	return output["ret"]
 """
 
 proxytemplate = """
@@ -139,6 +162,17 @@ def FUNCNAME(PARAMETERSHEAD):
 	return response["ret"]
 """
 
+proxytemplate_monadic = """
+def FUNCNAME(PARAMETERSHEAD):
+	global __lambdalog
+	msg = PACKEDPARAMETERS
+	fullresponse = lambda_client.invoke(FunctionName="complextrig_lambda", Payload=json.dumps(msg))
+	response = json.loads(fullresponse["Payload"].read())
+	if "log" in response:
+		__lambdalog += response["log"]
+	return response["ret"]
+"""
+
 def getlambdafunctions():
 	runcode = "aws lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7"
 	proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
@@ -146,7 +180,7 @@ def getlambdafunctions():
 	lambdafunctions = stdoutresults.strip().split("\n")
 	return lambdafunctions
 
-def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, role):
+def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, features, role, debug):
 	def pack(x):
 		return "\"{:s}\": {:s}".format(x, x)
 	def unpack(x):
@@ -173,6 +207,8 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 	for module in ("json", "subprocess"):
 		if not module in moveglobals:
 			exec("import {:s}".format(module), moveglobals)
+	if debug:
+		print(t)
 	exec(t, moveglobals)
 	#moveglobals[function] = str
 
@@ -192,6 +228,21 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 				f = tempfile.NamedTemporaryFile(suffix=".py", mode="w")
 				filename = f.name
 
+			if "print" in features.get(function, []):
+				f.write("from __future__ import print_function\n")
+				f.write("__lambdalog = ''\n")
+				f.write("def print(*args, **kwargs):\n")
+				f.write("\tglobal __lambdalog\n")
+				f.write("\t__lambdalog += ''.join([str(arg) for arg in args]) + '\\n'\n")
+			else:
+				# Monadic behaviour: print from dependencies
+				monadic = False
+				for dep in dependencies.get(function, []):
+					if "print" in features.get(dep, []):
+						monadic = True
+				if monadic:
+					f.write("__lambdalog = ''\n")
+
 			# FIXME: module dependencies are global; missing scanned per-method dependencies
 			for importmodule in imports:
 				f.write("import {:s}\n".format(importmodule))
@@ -203,6 +254,8 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 			for dep in dependencies.get(function, []):
 				f.write("# dep {:s}\n".format(dep))
 				t = proxytemplate
+				if monadic:
+					t = proxytemplate_monadic
 				depparameters = arguments.get(dep, [])
 				packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
 				t = t.replace("FUNCNAME", dep)
@@ -239,7 +292,7 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 				proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 				proc.wait()
 
-def move(moveglobals, local=False, lambdarolearn=None, module=None):
+def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False):
 	if not lambdarolearn:
 		printlambada("role not set, trying to read LAMBDAROLEARN")
 		lambdarolearn = os.getenv("LAMBDAROLEARN")
@@ -261,7 +314,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None):
 		elif type(moveglobals[moveglobal]) == type(move):
 			# = function
 			functions.append(moveglobal)
-	tainted, args, bodies, dependencies = analyse(None, functions, module)
+	tainted, args, bodies, dependencies, features = analyse(None, functions, module)
 	#print("// imports", str(imports))
 	for function in functions:
 		#print("**", function, type(moveglobals[function]))
@@ -269,6 +322,6 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None):
 			printlambada("skip tainted", function)
 		else:
 			printlambada("move", function)
-			moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, lambdarolearn)
+			moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, features, lambdarolearn, debug)
 		#analyse(function)
 	#moveglobals["complextrig"] = complextrigmod
