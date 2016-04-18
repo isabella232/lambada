@@ -1,0 +1,16 @@
+assumedrole=arn:aws:sts::...:assumed-role/lambda_basic_execution/awslambda_...
+fullrole=arn:aws:iam::...:role/lambda_basic_execution
+shortrole=lambda_basic_execution
+fulluser=arn:aws:iam::...:user/...
+
+# does not work (is an assumed role)
+aws lambda add-permission --function-name complextrig_lambda --statement-id complextrig_statement1 --action lambda:InvokeFunction --principal $assumedrole
+
+# works (is a role)
+aws lambda add-permission --function-name complextrig_lambda --statement-id complextrig_statement2 --action lambda:InvokeFunction --principal $fullrole
+
+# as above, but simplified... does NOT work!
+aws lambda add-permission --function-name complextrig_lambda --statement-id complextrig_statement2 --action lambda:InvokeFunction --principal $shortrole
+
+# works (is a user)
+aws lambda add-permission --function-name complextrig_lambda --statement-id complextrig_statement3 --action lambda:InvokeFunction --principal $fulluser

@@ -1,0 +1,28 @@
+Lambada - Automated Deployment of Python Methods to the (Lambda) Cloud
+Copyright (C) 2016 Josef Spillner <xmpp:josef.spillner@swissjabber.ch>
+======================================================================
+
+Lambada is a Python module which dynamically re-wites any module or
+script it is included in so that all functions become externalised (if
+feasible), deployed to AWS Lambda, and automatically executed there.
+
+Instructions:
+- Create an account at AWS
+- Configure lambda so that e.g. `aws lambda list-functions' works
+- Configure to have at least one dedicated execution role, and enter its
+  unique number (ARN)
+  * as environment variable: LAMBADAROLEARN=..., e.g. through wrapper
+    script `run.sh'
+  * as parameter to lambada.move(lambdarolearn=...)
+
+Interesting files:
+- lambada.py: main module file
+- myapp.py: sample lambada-fied application script
+- myapp-tests.py: full unit test coverage for the sample script
+- values.csv: sample data for the sample script
+
+Not so interesting files:
+- codegen.py: external, from https://github.com/andreif/codegen, with
+  some limitations, e.g. `with'
+- functions/: directory with some testing scripts, can be ignored
+- README: you're reading it right now
