@@ -13,9 +13,6 @@ def printlambada(*s):
 	s += (reset,)
 	print(red, "»» Lambada:", *s)
 
-modulename = inspect.stack()[-1][1]
-printlambada("targeting", modulename, "...")
-
 class FuncListener(ast.NodeVisitor):
 	def __init__(self, functionname, functions):
 		ast.NodeVisitor.__init__(self)
@@ -89,7 +86,13 @@ class FuncListener(ast.NodeVisitor):
 			self.bodies[node.name] = newbody
 		self.generic_visit(node)
 
-def analyse(functionname, functions):
+def analyse(functionname, functions, module):
+	if not module:
+		modulename = inspect.stack()[-1][1]
+		printlambada("targeting", modulename, "...")
+	else:
+		modulename = module
+
 	modulestring = open(modulename).read()
 	tree = ast.parse(modulestring, modulename)
 	fl = FuncListener(functionname, functions)
@@ -236,7 +239,7 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 				proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 				proc.wait()
 
-def move(moveglobals, local=False, lambdarolearn=None):
+def move(moveglobals, local=False, lambdarolearn=None, module=None):
 	if not lambdarolearn:
 		printlambada("role not set, trying to read LAMBDAROLEARN")
 		lambdarolearn = os.getenv("LAMBDAROLEARN")
@@ -258,7 +261,7 @@ def move(moveglobals, local=False, lambdarolearn=None):
 		elif type(moveglobals[moveglobal]) == type(move):
 			# = function
 			functions.append(moveglobal)
-	tainted, args, bodies, dependencies = analyse(None, functions)
+	tainted, args, bodies, dependencies = analyse(None, functions, module)
 	#print("// imports", str(imports))
 	for function in functions:
 		#print("**", function, type(moveglobals[function]))
