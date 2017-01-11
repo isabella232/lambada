@@ -174,7 +174,9 @@ def FUNCNAME(PARAMETERSHEAD):
 """
 
 def getlambdafunctions():
-	runcode = "aws lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7"
+	# historic awscli pre-JSON
+	#runcode = "aws lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7"
+	runcode = "aws lambda list-functions | grep FunctionName | cut -d '\"' -f 4"
 	proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 	stdoutresults = proc.communicate()[0].decode("utf-8")
 	lambdafunctions = stdoutresults.strip().split("\n")
