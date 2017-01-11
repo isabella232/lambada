@@ -213,14 +213,15 @@ class SourceGenerator(NodeVisitor):
                 paren_or_comma()
                 self.write(keyword.arg + '=')
                 self.visit(keyword.value)
-            if node.starargs is not None:
-                paren_or_comma()
-                self.write('*')
-                self.visit(node.starargs)
-            if node.kwargs is not None:
-                paren_or_comma()
-                self.write('**')
-                self.visit(node.kwargs)
+# LAMBADA: Python 3.5 compatibility [https://github.com/alecthomas/importmagic/issues/25]
+#            if node.starargs is not None:
+#                paren_or_comma()
+#                self.write('*')
+#                self.visit(node.starargs)
+#            if node.kwargs is not None:
+#                paren_or_comma()
+#                self.write('**')
+#                self.visit(node.kwargs)
         self.write(have_args and '):' or ':')
         self.body(node.body)
 
@@ -383,14 +384,15 @@ class SourceGenerator(NodeVisitor):
             write_comma()
             self.write(keyword.arg + '=')
             self.visit(keyword.value)
-        if node.starargs is not None:
-            write_comma()
-            self.write('*')
-            self.visit(node.starargs)
-        if node.kwargs is not None:
-            write_comma()
-            self.write('**')
-            self.visit(node.kwargs)
+# LAMBADA: Python 3.5 compatibility [https://github.com/alecthomas/importmagic/issues/25]
+#        if node.starargs is not None:
+#            write_comma()
+#            self.write('*')
+#            self.visit(node.starargs)
+#        if node.kwargs is not None:
+#            write_comma()
+#            self.write('**')
+#            self.visit(node.kwargs)
         self.write(')')
 
     def visit_Name(self, node):

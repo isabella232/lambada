@@ -294,10 +294,18 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 
 def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False):
 	if not lambdarolearn:
-		printlambada("role not set, trying to read LAMBDAROLEARN")
+		printlambada("role not set, trying to read environment variable LAMBDAROLEARN")
 		lambdarolearn = os.getenv("LAMBDAROLEARN")
 		if not lambdarolearn:
-			raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
+			printlambada("environment variable not set, trying to assemble...")
+			runcode = "aws sts get-caller-identity --output text --query 'Account'"
+			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+			stdoutresults = proc.communicate()[0].decode("utf-8").strip()
+			if len(stdoutresults) == 12:
+				lambdarolearn = "arn:aws:iam::{:s}:role/lambda_basic_execution".format(stdoutresults)
+				printlambada("... assembled", lambdarolearn)
+			if not lambdarolearn:
+				raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
 	if not local:
 		lambdafunctions = getlambdafunctions()
 	else:
