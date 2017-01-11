@@ -3,7 +3,9 @@
 import math
 import csv
 
-import lambada
+import sys
+if sys.version_info.major == 3:
+	import lambada
 
 def complextrig(v):
 	print("// complextrig", v)
@@ -25,6 +27,9 @@ def calculatecsv():
 	return calculate(values)
 
 if __name__ == "__main__":
-	lambada.move(globals())
-	print(calculate([98, 99, 100]))
-	print(calculatecsv())
+	if sys.version_info.major == 3:
+		lambada.move(globals())
+		print(calculate([98, 99, 100]))
+		print(calculatecsv())
+	else:
+		raise Exception("Dynamic lambdafication requires Python 3.")
