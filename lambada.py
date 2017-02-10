@@ -200,8 +200,9 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 	t = t.replace("UNPACKPARAMETERS", unpackparameters)
 	#print(t)
 
-	gencode = "\n\t".join(map(lambda node: codegen.to_source(node), body))
-	t = t.replace("FUNCTIONIMPLEMENTATION", gencode)
+	#gencode = "\n\t".join(map(lambda node: codegen.to_source(node, indent_with="\t"), body))
+	gencode = "\n".join(map(lambda node: "\n".join(["\t" + x for x in codegen.to_source(node, indent_with="\t").split("\n")]), body))
+	t = t.replace("FUNCTIONIMPLEMENTATION", gencode[1:])
 	#print(t)
 
 	t = t.replace("LOCAL", ("False", "True")[local])
@@ -295,7 +296,7 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 				proc.wait()
 
 def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False):
-	if not lambdarolearn:
+	if not lambdarolearn and not local:
 		printlambada("role not set, trying to read environment variable LAMBDAROLEARN")
 		lambdarolearn = os.getenv("LAMBDAROLEARN")
 		if not lambdarolearn:

@@ -5,7 +5,7 @@
 import time
 import math
 
-level = 10 # 20
+level = 12 # 20 ca. 15s
 counter = 0
 
 def fib(x):
@@ -21,5 +21,5 @@ if __name__ == "__main__":
 	starttime = time.time()
 	print("fib(", level, ") =", fib(level))
 	timedelta = time.time() - starttime
-	print("time (s)", round(timedelta, 2))
+	print("time (ms)", round(timedelta * 1000, 2))
 	print("calls", counter)
