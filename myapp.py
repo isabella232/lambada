@@ -28,7 +28,7 @@ def calculatecsv():
 
 if __name__ == "__main__":
 	if sys.version_info.major == 3:
-		lambada.move(globals())
+		lambada.move(globals(), endpoint="http://localhost:10000/")
 		print(calculate([98, 99, 100]))
 		print(calculatecsv())
 	else:

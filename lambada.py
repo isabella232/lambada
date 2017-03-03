@@ -124,6 +124,12 @@ def analyse(functionname, functions, module):
 				fl.tainted.append(function)
 	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features
 
+def awstool(endpoint):
+	if endpoint:
+		return "aws --endpoint-url {:s}".format(endpoint)
+	else:
+		return "aws"
+
 template = """
 def FUNCNAME_remote(event, context):
 	UNPACKPARAMETERS
@@ -141,7 +147,7 @@ def FUNCNAME(PARAMETERSHEAD):
 		jsonoutput = FUNCNAME_stub(jsoninput)
 	else:
 		functionname = "FUNCNAME_lambda"
-		runcode = ["aws", "lambda", "invoke", "--function-name", functionname, "--payload", jsoninput, "_lambada.log"]
+		runcode = [AWSTOOL, "lambda", "invoke", "--function-name", functionname, "--payload", jsoninput, "_lambada.log"]
 		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
 		stdoutresults = proc.communicate()[0].decode("utf-8")
 		jsonoutput = open("_lambada.log").read()
@@ -158,7 +164,8 @@ proxytemplate = """
 def FUNCNAME(PARAMETERSHEAD):
 	msg = PACKEDPARAMETERS
 	fullresponse = lambda_client.invoke(FunctionName="complextrig_lambda", Payload=json.dumps(msg))
-	response = json.loads(fullresponse["Payload"].read())
+	#response = json.loads(fullresponse["Payload"].read())
+	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
 	return response["ret"]
 """
 
@@ -167,22 +174,23 @@ def FUNCNAME(PARAMETERSHEAD):
 	global __lambdalog
 	msg = PACKEDPARAMETERS
 	fullresponse = lambda_client.invoke(FunctionName="complextrig_lambda", Payload=json.dumps(msg))
-	response = json.loads(fullresponse["Payload"].read())
+	#response = json.loads(fullresponse["Payload"].read())
+	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
 	if "log" in response:
 		__lambdalog += response["log"]
 	return response["ret"]
 """
 
-def getlambdafunctions():
+def getlambdafunctions(endpoint):
 	# historic awscli pre-JSON
-	#runcode = "aws lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7"
-	runcode = "aws lambda list-functions | grep FunctionName | cut -d '\"' -f 4"
+	#runcode = "{:s} lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7".format(awstool(endpoint))
+	runcode = "{:s} lambda list-functions | grep FunctionName | cut -d '\"' -f 4".format(awstool(endpoint))
 	proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 	stdoutresults = proc.communicate()[0].decode("utf-8")
 	lambdafunctions = stdoutresults.strip().split("\n")
 	return lambdafunctions
 
-def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, features, role, debug):
+def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, features, role, debug, endpoint):
 	def pack(x):
 		return "\"{:s}\": {:s}".format(x, x)
 	def unpack(x):
@@ -194,6 +202,7 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 	packedparameters = "{" + ",".join(map(pack, parameters)) + "}"
 
 	t = template
+	t = t.replace("AWSTOOL", ",".join(["\"" + x + "\"" for x in awstool(endpoint).split(" ")]))
 	t = t.replace("FUNCNAME", function)
 	t = t.replace("PARAMETERSHEAD", ",".join(parameters))
 	t = t.replace("PACKEDPARAMETERS", packedparameters)
@@ -252,7 +261,8 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 			if len(dependencies.get(function, [])) > 0:
 				f.write("import json\n")
 				f.write("from boto3 import client as boto3_client\n")
-				f.write("lambda_client = boto3_client('lambda')\n")
+				#f.write("lambda_client = boto3_client('lambda')\n")
+				f.write("lambda_client = boto3_client('lambda', endpoint_url='{:s}')\n".format(endpoint))
 			f.write("\n")
 			for dep in dependencies.get(function, []):
 				f.write("# dep {:s}\n".format(dep))
@@ -278,7 +288,7 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 			zipname = zf.name
 
 			printlambada("deployer: zip {:s} -> {:s}".format(lambdafunction, zipname))
-			runcode = "aws lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python2.7' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(lambdafunction, role, lambdafunction, lambdafunction, zipname)
+			runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python2.7' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(awstool(endpoint), lambdafunction, role, lambdafunction, lambdafunction, zipname)
 			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 			proc.wait()
 
@@ -291,17 +301,17 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 						reverse = True
 			if reverse:
 				printlambada("deployer: reverse dependencies require role authorisation")
-				runcode = "aws lambda add-permission --function-name '{:s}' --statement-id {:s}_reverse --action lambda:InvokeFunction --principal {:s}".format(lambdafunction, lambdafunction, role)
+				runcode = "{:s} lambda add-permission --function-name '{:s}' --statement-id {:s}_reverse --action lambda:InvokeFunction --principal {:s}".format(awstool(endpoint), lambdafunction, lambdafunction, role)
 				proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 				proc.wait()
 
-def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False):
+def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False, endpoint=None):
 	if not lambdarolearn and not local:
 		printlambada("role not set, trying to read environment variable LAMBDAROLEARN")
 		lambdarolearn = os.getenv("LAMBDAROLEARN")
 		if not lambdarolearn:
 			printlambada("environment variable not set, trying to assemble...")
-			runcode = "aws sts get-caller-identity --output text --query 'Account'"
+			runcode = "{} sts get-caller-identity --output text --query 'Account'".format(awstool(endpoint))
 			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 			stdoutresults = proc.communicate()[0].decode("utf-8").strip()
 			if len(stdoutresults) == 12:
@@ -310,7 +320,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False)
 			if not lambdarolearn:
 				raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
 	if not local:
-		lambdafunctions = getlambdafunctions()
+		lambdafunctions = getlambdafunctions(endpoint)
 	else:
 		lambdafunctions = None
 	#print(moveglobals)
@@ -333,6 +343,6 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False)
 			printlambada("skip tainted", function)
 		else:
 			printlambada("move", function)
-			moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, features, lambdarolearn, debug)
+			moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, features, lambdarolearn, debug, endpoint)
 		#analyse(function)
 	#moveglobals["complextrig"] = complextrigmod
