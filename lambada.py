@@ -44,12 +44,27 @@ class FuncListener(ast.NodeVisitor):
 		for arg in node.args:
 			if isinstance(arg, ast.Call):
 				#print("AST: indirect-dependency-call", arg.func.id)
+				if not "id" in dir(arg.func):
+					# corner cases
+					continue
 				self.checkdep(arg.func.id)
 				if arg.func.id == "map":
 					for maparg in arg.args:
 						if isinstance(maparg, ast.Name):
 							#print("AST: map-call", maparg.id)
 							self.checkdep(maparg.id)
+
+	def visit_Return(self, node):
+		#printlambada("ASTRET:", node.value)
+		#a = ast.Assign([ast.Name("ret", ast.Store())], node.value)
+		#r = ast.Return(ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())]))
+		d = ast.Dict([ast.Str("ret"), ast.Str("log")], [node.value, ast.Name("__lambdalog", ast.Load())])
+		#b = ast.Assign([ast.Name("ret", ast.Store())], d)
+		#r = ast.Return(ast.Name("ret", ast.Load()))
+		#g = ast.Global(["__lambdalog"])
+		#z = ast.Assign([ast.Name("__lambdalog", ast.Store())], ast.Str(""))
+		#newbody = [g] + newbody + [a, b, z, r]
+		node.value = d
 
 	def visit_FunctionDef(self, node):
 		#printlambada("AST:", node.args)
@@ -65,6 +80,9 @@ class FuncListener(ast.NodeVisitor):
 				#printlambada("AST: linekind", linekind, dir(linekind))
 				if isinstance(linekind, ast.Expr):
 					#printlambada("AST: match", linekind.value, linekind.value.func.id)
+					if not "func" in dir(linekind.value) or not "id" in dir(linekind.value.func):
+						# corner cases
+						continue
 					if linekind.value.func.id in ("input",):
 						self.tainted.append(node.name)
 					elif linekind.value.func.id in ("print",):
@@ -156,7 +174,11 @@ def FUNCNAME(PARAMETERSHEAD):
 			raise Exception("Lambda Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
 	output = json.loads(jsonoutput)
 	if "log" in output:
-		lambada.lambadamonad(output["log"])
+		if local:
+			if output["log"]:
+				print(output["log"])
+		else:
+			lambada.lambadamonad(output["log"])
 	return output["ret"]
 """
 
@@ -190,7 +212,7 @@ def getlambdafunctions(endpoint):
 	lambdafunctions = stdoutresults.strip().split("\n")
 	return lambdafunctions
 
-def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, features, role, debug, endpoint):
+def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, features, role, debug, endpoint, globalvars):
 	def pack(x):
 		return "\"{:s}\": {:s}".format(x, x)
 	def unpack(x):
@@ -219,12 +241,14 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 	for module in ("json", "subprocess"):
 		if not module in moveglobals:
 			exec("import {:s}".format(module), moveglobals)
-	if debug:
+	if debug and not local:
 		print(t)
 	exec(t, moveglobals)
 	#moveglobals[function] = str
 
-	if not local:
+	if local:
+		return t
+	else:
 		lambdafunction = "{:s}_lambda".format(function)
 		if lambdafunction in lambdafunctions:
 			printlambada("deployer: already deployed {:s}".format(lambdafunction))
@@ -258,11 +282,16 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 			# FIXME: module dependencies are global; missing scanned per-method dependencies
 			for importmodule in imports:
 				f.write("import {:s}\n".format(importmodule))
+			for globalvar in globalvars:
+				f.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
 			if len(dependencies.get(function, [])) > 0:
 				f.write("import json\n")
 				f.write("from boto3 import client as boto3_client\n")
 				#f.write("lambda_client = boto3_client('lambda')\n")
-				f.write("lambda_client = boto3_client('lambda', endpoint_url='{:s}')\n".format(endpoint))
+				if endpoint:
+					f.write("lambda_client = boto3_client('lambda', endpoint_url='{:s}')\n".format(endpoint))
+				else:
+					f.write("lambda_client = boto3_client('lambda')\n")
 			f.write("\n")
 			for dep in dependencies.get(function, []):
 				f.write("# dep {:s}\n".format(dep))
@@ -326,6 +355,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 	#print(moveglobals)
 	imports = []
 	functions = []
+	globalvars = []
 	for moveglobal in list(moveglobals):
 		if type(moveglobals[moveglobal]) == type(ast):
 			# = module import
@@ -335,14 +365,41 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 		elif type(moveglobals[moveglobal]) == type(move):
 			# = function
 			functions.append(moveglobal)
+		elif not moveglobal.startswith("__"):
+			# = global variable
+			#print("// global variable", moveglobal, "=", moveglobals[moveglobal])
+			mgvalue = moveglobals[moveglobal]
+			if type(mgvalue) == str:
+				mgvalue = "'" + mgvalue + "'"
+			else:
+				mgvalue = str(mgvalue)
+			globalvars.append((moveglobal, mgvalue))
 	tainted, args, bodies, dependencies, features = analyse(None, functions, module)
 	#print("// imports", str(imports))
+	tsource = ""
 	for function in functions:
 		#print("**", function, type(moveglobals[function]))
 		if function in tainted:
 			printlambada("skip tainted", function)
 		else:
 			printlambada("move", function)
-			moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, features, lambdarolearn, debug, endpoint)
+			t = moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, features, lambdarolearn, debug, endpoint, globalvars)
+			if t:
+				tsource += t
 		#analyse(function)
 	#moveglobals["complextrig"] = complextrigmod
+
+	if tsource:
+		for globalvar in globalvars:
+			tsource = "{:s} = {:s}\n".format(globalvar[0], globalvar[1]) + tsource
+		# FIXME: only needed when monadic...
+		tsource = "__lambdalog = ''\n" + tsource
+		for importmodule in imports + ["json", "subprocess"]:
+			tsource = "import {:s}\n".format(importmodule) + tsource
+		if debug:
+			print(tsource)
+		lambmodule = module.replace(".py", "_lambdafied.py")
+		printlambada("store", lambmodule)
+		f = open(lambmodule, "w")
+		f.write(tsource)
+		f.close()
