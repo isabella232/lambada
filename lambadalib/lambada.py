@@ -1,12 +1,15 @@
+# Lambada - Main module
+
 import inspect
 import ast
-import codegen
 #import astor.codegen as codegen
 import tempfile
 import zipfile
 import subprocess
 import time
 import os
+
+from lambadalib import codegen
 
 def printlambada(*s):
 	red = "\033[1;31m"
