@@ -45,7 +45,7 @@ class Proxy:
 def scan(globalnames):
 	for modname in globalnames:
 		if type(globalnames[modname]) == types.ModuleType:
-			blacklist = ("json",)
+			blacklist = ("json","sys","functionproxy")
 			if modname not in ("__builtins__", __name__) + blacklist:
 				print(color("[scan] module {}".format(modname)))
 				mod = globalnames[modname]
