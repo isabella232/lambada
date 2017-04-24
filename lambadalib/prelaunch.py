@@ -1,12 +1,11 @@
 # Lambada - Prelaunch module
 
-#import functionproxy
-
 import ast
 import sys
 import importlib
 import imp
 
+from lambadalib import functionproxy
 from lambadalib import cmdline
 
 def main_unused(name):
@@ -24,7 +23,7 @@ def main_unused(name):
 			mod = importlib.import_module(modname)
 			d[modname] = mod
 
-	#functionproxy.scan(d)
+	functionproxy.scan(d)
 
 	code = compile(modcode, path, "exec")
 	module = imp.new_module(name)
