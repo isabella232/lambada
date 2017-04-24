@@ -1,12 +1,26 @@
 Lambada - Automated Deployment of Python Methods to the (Lambda) Cloud
-Copyright (C) 2016 Josef Spillner <xmpp:josef.spillner@swissjabber.ch>
-======================================================================
+Copyright (C) 2016-17 Josef Spillner <xmpp:josef.spillner@swissjabber.ch>
+=========================================================================
 
-Lambada is a Python module which dynamically re-wites any module or
-script it is included in so that all functions become externalised (if
-feasible), deployed to AWS Lambda, and automatically executed there.
+Lambada is an executable Python module which dynamically re-wites any
+module or script it is included in or invoked with. This means that all
+functions become externalised (if feasible), deployed to AWS Lambda and
+automatically executed there, or rewritten as deployable units into
+local files. Furthermore, classes are wrapped into proxy classes for
+stateful access to individual methods as functions.
 
-Instructions:
+General instructions:
+- Install Python 3.5+
+
+Instructions for local mode:
+- Run Lambada with --local (and if you prefer with --debug also)
+- It will create copies of files suffixed with _lambdafied.py
+
+Instructions for local/remote mode and Snafu:
+- Run Lambada with --endpoint http://localhost:10000
+- It will deploy function packages into the given Snafu instance
+
+Instructions for remote mode and AWS:
 - Create an account at AWS
 - Configure lambda so that e.g. `aws lambda list-functions' works
 - Configure to have at least one dedicated execution role, and enter its
@@ -14,15 +28,21 @@ Instructions:
   * as environment variable: LAMBADAROLEARN=..., e.g. through wrapper
     script `run.sh'
   * as parameter to lambada.move(lambdarolearn=...)
+  * or simply leave it out and Lambada will auto-detect your role
+- Now you can run Lambada without --local
 
 Interesting files:
-- lambada.py: main module file
-- myapp.py: sample lambada-fied application script
-- myapp-tests.py: full unit test coverage for the sample script
-- values.csv: sample data for the sample script
+- lambadalib/lambada.py: main module file
+- lambadalib/functionproxy.py: class proxy wrapper
+- examples/myapp.py: sample lambada-fied application script
+- examples/myapp-tests.py: full unit test coverage for the sample script
+- examples/values.csv: sample data for the sample script
+- examples/fib.py: another application script, not internally
+  lambada-fied
 
 Not so interesting files:
-- codegen.py: external, from https://github.com/andreif/codegen, with
-  some limitations, e.g. `with'
-- functions/: directory with some testing scripts, can be ignored
+- lambadalib/codegen.py: external, from
+  https://github.com/andreif/codegen, with some limitations, e.g. `with'
+- examples/functions/: directory with some testing scripts, can be
+  ignored
 - README: you're reading it right now

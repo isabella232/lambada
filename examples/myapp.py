@@ -5,7 +5,8 @@ import csv
 
 import sys
 if sys.version_info.major == 3:
-	import lambada
+	sys.path.append("..")
+	from lambadalib import lambada
 
 def complextrig(v):
 	print("// complextrig", v)
@@ -28,7 +29,7 @@ def calculatecsv():
 
 if __name__ == "__main__":
 	if sys.version_info.major == 3:
-		lambada.move(globals(), endpoint="http://localhost:10000/")
+		lambada.move(globals(), endpoint="http://localhost:10000/", local=True, module=sys.argv[0])
 		print(calculate([98, 99, 100]))
 		print(calculatecsv())
 	else:
