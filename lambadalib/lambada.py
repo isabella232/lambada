@@ -10,6 +10,7 @@ import time
 import os
 
 from lambadalib import codegen
+from lambadalib import functionproxy
 
 def printlambada(*s):
 	red = "\033[1;31m"
@@ -33,11 +34,16 @@ class FuncListener(ast.NodeVisitor):
 		self.bodies = {}
 		self.deps = {}
 		self.features = {}
+		self.classes = {}
 
 	def checkdep(self, dep):
 		if dep in self.functions and not dep in self.deps.get(self.currentfunction, []):
 			printlambada("AST: dependency {:s} -> {:s}".format(self.currentfunction, dep))
 			self.deps.setdefault(self.currentfunction, []).append(dep)
+
+	def visit_ClassDef(self, node):
+		#print("AST: class def", node.body)
+		self.classes[node.name] = node.body
 
 	def visit_Call(self, node):
 		#print("AST: call", node.func)
@@ -143,7 +149,7 @@ def analyse(functionname, functions, module):
 			if dep in fl.tainted:
 				printlambada("AST: dependency {:s} -> {:s} leads to tainting".format(function, dep))
 				fl.tainted.append(function)
-	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features
+	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features, fl.classes
 
 def awstool(endpoint):
 	if endpoint:
@@ -359,6 +365,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 	imports = []
 	functions = []
 	globalvars = []
+	classes = []
 	for moveglobal in list(moveglobals):
 		if type(moveglobals[moveglobal]) == type(ast):
 			# = module import
@@ -368,6 +375,10 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 		elif type(moveglobals[moveglobal]) == type(move):
 			# = function
 			functions.append(moveglobal)
+		elif type(moveglobals[moveglobal]) == type(str):
+			# = class definition
+			#print("// class", moveglobal, "=", moveglobals[moveglobal])
+			classes.append(moveglobals[moveglobal])
 		elif not moveglobal.startswith("__"):
 			# = global variable
 			#print("// global variable", moveglobal, "=", moveglobals[moveglobal])
@@ -377,9 +388,11 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 			else:
 				mgvalue = str(mgvalue)
 			globalvars.append((moveglobal, mgvalue))
-	tainted, args, bodies, dependencies, features = analyse(None, functions, module)
+	tainted, args, bodies, dependencies, features, classbodies = analyse(None, functions, module)
 	#print("// imports", str(imports))
 	tsource = ""
+	for classobj in classes:
+		functionproxy.scanclass(None, None, classobj.__name__)
 	for function in functions:
 		#print("**", function, type(moveglobals[function]))
 		if function in tainted:
@@ -391,6 +404,10 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 				tsource += t
 		#analyse(function)
 	#moveglobals["complextrig"] = complextrigmod
+
+# TODO: throws exception AttributeError: 'list' object has no attribute '_fields'
+#	for classbody in classbodies:
+#		tsource += codegen.to_source(classbodies[classbody], indent_with="\t")
 
 	if tsource:
 		for globalvar in globalvars:

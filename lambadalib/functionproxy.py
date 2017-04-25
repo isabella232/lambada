@@ -42,6 +42,13 @@ class Proxy:
 			return args
 		return method
 
+def scanclass(mod, modname, cname):
+	print(color("[scan] class {} -> proxy".format(cname)))
+	if mod and modname:
+		setattr(mod, cname, Proxy("{}.{}".format(modname, cname)))
+	else:
+		globals()[cname] = Proxy("{}".format(cname))
+
 def scan(globalnames):
 	for modname in globalnames:
 		if type(globalnames[modname]) == types.ModuleType:
@@ -51,7 +58,6 @@ def scan(globalnames):
 				mod = globalnames[modname]
 				for cname in dir(mod):
 					if getattr(mod, cname).__class__ == type:
-						print(color("[scan] class {} -> proxy".format(cname)))
-						setattr(mod, cname, Proxy("{}.{}".format(modname, cname)))
+						scanclass(mod, modname, cname)
 		elif globalnames[modname].__class__ == type:
 			pass
