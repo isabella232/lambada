@@ -43,7 +43,7 @@ class FuncListener(ast.NodeVisitor):
 
 	def visit_ClassDef(self, node):
 		#print("AST: class def", node.body)
-		self.classes[node.name] = node.body
+		self.classes[node.name] = node
 
 	def visit_Call(self, node):
 		#print("AST: call", node.func)
@@ -210,6 +210,27 @@ def FUNCNAME(PARAMETERSHEAD):
 	if "log" in response:
 		__lambdalog += response["log"]
 	return response["ret"]
+"""
+
+netproxy_template = """
+import json
+import importlib
+def Netproxy(d, classname, name, args):
+	if "." in classname:
+		modname, classname = classname.split(".")
+		mod = importlib.import_module(modname)
+		importlib.reload(mod)
+		C = getattr(mod, classname)
+	else:
+		C = globals()[classname]
+	_o = C()
+	_o.__dict__ = json.loads(d)
+	ret = getattr(_o, name)(*args)
+	d = json.dumps(_o.__dict__)
+	return d, ret
+
+def netproxy_handler(event, context):
+	n = Netproxy(event["d"], event[classname], event["name"], event["args"])
 """
 
 def getlambdafunctions(endpoint):
@@ -405,9 +426,10 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 		#analyse(function)
 	#moveglobals["complextrig"] = complextrigmod
 
-# TODO: throws exception AttributeError: 'list' object has no attribute '_fields'
-#	for classbody in classbodies:
-#		tsource += codegen.to_source(classbodies[classbody], indent_with="\t")
+	for classbody in classbodies:
+		tsource += codegen.to_source(classbodies[classbody], indent_with="\t")
+	if len(classbodies) > 0:
+		tsource += netproxy_template
 
 	if tsource:
 		for globalvar in globalvars:
