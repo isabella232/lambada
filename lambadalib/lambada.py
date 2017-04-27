@@ -230,7 +230,8 @@ def Netproxy(d, classname, name, args):
 	return d, ret
 
 def netproxy_handler(event, context):
-	n = Netproxy(event["d"], event[classname], event["name"], event["args"])
+	n = Netproxy(event["d"], event["classname"], event["name"], event["args"])
+	return n
 """
 
 def getlambdafunctions(endpoint):
