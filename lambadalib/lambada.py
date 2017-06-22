@@ -338,7 +338,7 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 				f.write("\n")
 			f.write("def {:s}(event, context):\n".format(lambdafunction))
 			f.write("\t{:s}\n".format(unpackparameters))
-			f.write("\t{:s}\n".format(gencode))
+			f.write("{:s}\n".format(gencode))
 			f.flush()
 
 			zf = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
