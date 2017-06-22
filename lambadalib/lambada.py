@@ -391,7 +391,9 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 	for moveglobal in list(moveglobals):
 		if type(moveglobals[moveglobal]) == type(ast):
 			# = module import
-			#print("// import", moveglobal)
+			#print("// import", moveglobal, moveglobals[moveglobal].__name__)
+			if moveglobal != moveglobals[moveglobal].__name__:
+				moveglobal = "{:s} as {:s}".format(moveglobals[moveglobal].__name__, moveglobal)
 			if moveglobal not in ("lambada", "__builtins__"):
 				imports.append(moveglobal)
 		elif type(moveglobals[moveglobal]) == type(move):
