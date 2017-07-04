@@ -194,7 +194,7 @@ def FUNCNAME(PARAMETERSHEAD):
 proxytemplate = """
 def FUNCNAME(PARAMETERSHEAD):
 	msg = PACKEDPARAMETERS
-	fullresponse = lambda_client.invoke(FunctionName="complextrig_lambda", Payload=json.dumps(msg))
+	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
 	#response = json.loads(fullresponse["Payload"].read())
 	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
 	return response["ret"]
@@ -204,7 +204,7 @@ proxytemplate_monadic = """
 def FUNCNAME(PARAMETERSHEAD):
 	global __lambdalog
 	msg = PACKEDPARAMETERS
-	fullresponse = lambda_client.invoke(FunctionName="complextrig_lambda", Payload=json.dumps(msg))
+	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
 	#response = json.loads(fullresponse["Payload"].read())
 	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
 	if "log" in response:
