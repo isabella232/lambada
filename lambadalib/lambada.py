@@ -23,13 +23,28 @@ def lambadamonad(s):
 	reset = "\033[0;0m"
 	print(green, "»» Lambada Monad:", s, reset)
 
+class CloudFunctionConfiguration:
+	def __init__(self):
+		self.enabled = False
+		self.memory = None
+		self.duration = None
+		self.region = None
+
+	def __str__(self):
+		return "CFC({}|{}|{})".format(self.memory, self.duration, self.region)
+
+	def __format__(self, s):
+		return self.__str__()
+
 class FuncListener(ast.NodeVisitor):
-	def __init__(self, functionname, functions):
+	def __init__(self, functionname, functions, annotations):
 		ast.NodeVisitor.__init__(self)
 		self.functionname = functionname
 		self.functions = functions
+		self.annotations = annotations
 		self.currentfunction = None
 		self.tainted = []
+		self.filtered = []
 		self.args = {}
 		self.bodies = {}
 		self.deps = {}
@@ -76,9 +91,37 @@ class FuncListener(ast.NodeVisitor):
 		node.value = d
 
 	def visit_FunctionDef(self, node):
-		#printlambada("AST:", node.args)
+		#printlambada("AST:", node.name, node.args)
 		#printlambada("AST:", node.args.args[0].arg)
 		self.currentfunction = node.name
+
+		if self.annotations:
+			if node.name == "cloudfunction":
+				self.generic_visit(node)
+				#return
+			cfc = CloudFunctionConfiguration()
+			for name in node.decorator_list:
+				if "id" in dir(name):
+					if name.id == "cloudfunction":
+						cfc.enabled = True
+				else:
+					if name.func.id == "cloudfunction":
+						cfc.enabled = True
+						for keyword in name.keywords:
+							if keyword.arg == "memory":
+								cfc.memory = keyword.value.n
+							elif keyword.arg == "region":
+								cfc.region = keyword.value.s
+							elif keyword.arg == "duration":
+								cfc.duration = keyword.value.n
+			if cfc.enabled:
+				printlambada("AST: annotation {:s} @ {:s}".format(cfc, node.name))
+			else:
+				printlambada("AST: no annotation @ {:s}".format(node.name))
+				self.generic_visit(node)
+				#return
+				self.filtered.append(node.name)
+
 		if self.functionname == None or node.name == self.functionname:
 			#printlambada("AST: hit function!")
 			#printlambada(dir(node))
@@ -133,7 +176,7 @@ class FuncListener(ast.NodeVisitor):
 			self.bodies[node.name] = newbody
 		self.generic_visit(node)
 
-def analyse(functionname, functions, module):
+def analyse(functionname, functions, module, annotations):
 	if not module:
 		modulename = inspect.stack()[-1][1]
 		printlambada("targeting", modulename, "...")
@@ -142,13 +185,22 @@ def analyse(functionname, functions, module):
 
 	modulestring = open(modulename).read()
 	tree = ast.parse(modulestring, modulename)
-	fl = FuncListener(functionname, functions)
+	fl = FuncListener(functionname, functions, annotations)
 	fl.visit(tree)
 	for function in functions:
 		for dep in fl.deps.get(function, []):
 			if dep in fl.tainted:
 				printlambada("AST: dependency {:s} -> {:s} leads to tainting".format(function, dep))
 				fl.tainted.append(function)
+	for function in functions:
+		for dep in fl.deps.get(function, []):
+			if dep in fl.filtered:
+				taint = True
+				if dep not in fl.tainted:
+					printlambada("AST: dependency {:s} -> {:s} leads to unfiltering".format(function, dep))
+					taint = False
+				if taint:
+					fl.tainted.append(dep)
 	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features, fl.classes
 
 def awstool(endpoint):
@@ -365,7 +417,7 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 				proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 				proc.wait()
 
-def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False, endpoint=None):
+def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False, endpoint=None, annotations=False):
 	if not lambdarolearn and not local:
 		printlambada("role not set, trying to read environment variable LAMBDAROLEARN")
 		lambdarolearn = os.getenv("LAMBDAROLEARN")
@@ -412,7 +464,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 			else:
 				mgvalue = str(mgvalue)
 			globalvars.append((moveglobal, mgvalue))
-	tainted, args, bodies, dependencies, features, classbodies = analyse(None, functions, module)
+	tainted, args, bodies, dependencies, features, classbodies = analyse(None, functions, module, annotations)
 	#print("// imports", str(imports))
 	tsource = ""
 	for classobj in classes:

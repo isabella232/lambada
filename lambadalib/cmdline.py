@@ -12,6 +12,7 @@ def execute():
 	parser.add_argument('--local', dest='local', action='store_const', const=True, default=False, help='only local conversion (default: remote deployment)')
 	parser.add_argument('--debug', dest='debug', action='store_const', const=True, default=False, help='debugging mode (default: none)')
 	parser.add_argument('--endpoint', metavar='ep', type=str, nargs='?', help='service endpoint when not using AWS Lambda but e.g. Snafu')
+	parser.add_argument('--annotations', dest='annotations', action='store_const', const=True, default=False, help='only consider decorated functions')
 
 	args = parser.parse_args()
 
@@ -23,7 +24,7 @@ def execute():
 		fileobj.close()
 
 		try:
-			lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug, endpoint=args.endpoint)
+			lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug, endpoint=args.endpoint, annotations=args.annotations)
 		except Exception as e:
 			print("Exception: {:s}".format(str(e)))
 			if args.debug:
