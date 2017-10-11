@@ -50,6 +50,7 @@ class FuncListener(ast.NodeVisitor):
 		self.deps = {}
 		self.features = {}
 		self.classes = {}
+		self.cfcs = {}
 
 	def checkdep(self, dep):
 		if dep in self.functions and not dep in self.deps.get(self.currentfunction, []):
@@ -116,6 +117,7 @@ class FuncListener(ast.NodeVisitor):
 								cfc.duration = keyword.value.n
 			if cfc.enabled:
 				printlambada("AST: annotation {:s} @ {:s}".format(cfc, node.name))
+				self.cfcs[node.name] = cfc
 			else:
 				printlambada("AST: no annotation @ {:s}".format(node.name))
 				self.generic_visit(node)
@@ -196,12 +198,12 @@ def analyse(functionname, functions, module, annotations):
 		for dep in fl.deps.get(function, []):
 			if dep in fl.filtered:
 				taint = True
-				if dep not in fl.tainted:
-					printlambada("AST: dependency {:s} -> {:s} leads to unfiltering".format(function, dep))
-					taint = False
+				#if dep not in fl.tainted:
+				#	printlambada("AST: dependency {:s} -> {:s} leads to unfiltering".format(function, dep))
+				#	taint = False
 				if taint:
 					fl.tainted.append(dep)
-	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features, fl.classes
+	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features, fl.classes, fl.cfcs
 
 def awstool(endpoint):
 	if endpoint:
@@ -295,7 +297,7 @@ def getlambdafunctions(endpoint):
 	lambdafunctions = stdoutresults.strip().split("\n")
 	return lambdafunctions
 
-def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, features, role, debug, endpoint, globalvars):
+def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions, imports, dependencies, tainted, features, role, debug, endpoint, globalvars, cfc):
 	def pack(x):
 		return "\"{:s}\": {:s}".format(x, x)
 	def unpack(x):
@@ -400,7 +402,12 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 			zipname = zf.name
 
 			printlambada("deployer: zip {:s} -> {:s}".format(lambdafunction, zipname))
-			runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python2.7' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(awstool(endpoint), lambdafunction, role, lambdafunction, lambdafunction, zipname)
+			runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(awstool(endpoint), lambdafunction, role, lambdafunction, lambdafunction, zipname)
+			if cfc:
+				if cfc.memory:
+					runcode += " --memory-size {}".format(cfc.memory)
+				if cfc.duration:
+					runcode += " --timeout {}".format(cfc.duration)
 			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 			proc.wait()
 
@@ -464,7 +471,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 			else:
 				mgvalue = str(mgvalue)
 			globalvars.append((moveglobal, mgvalue))
-	tainted, args, bodies, dependencies, features, classbodies = analyse(None, functions, module, annotations)
+	tainted, args, bodies, dependencies, features, classbodies, cfcs = analyse(None, functions, module, annotations)
 	#print("// imports", str(imports))
 	tsource = ""
 	for classobj in classes:
@@ -475,7 +482,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 			printlambada("skip tainted", function)
 		else:
 			printlambada("move", function)
-			t = moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, features, lambdarolearn, debug, endpoint, globalvars)
+			t = moveinternal(moveglobals, function, args, bodies.get(function, []), local, lambdafunctions, imports, dependencies, tainted, features, lambdarolearn, debug, endpoint, globalvars, cfcs.get(function, None))
 			if t:
 				tsource += t
 		#analyse(function)
