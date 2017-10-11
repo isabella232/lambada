@@ -3,11 +3,21 @@ Copyright (C) 2016-17 Josef Spillner <xmpp:josef.spillner@swissjabber.ch>
 =========================================================================
 
 Lambada is an executable Python module which dynamically re-wites any
-module or script it is included in or invoked with. This means that all
-functions become externalised (if feasible), deployed to AWS Lambda and
-automatically executed there, or rewritten as deployable units into
-local files. Furthermore, classes are wrapped into proxy classes for
-stateful access to individual methods as functions.
+module or script it is included in or invoked with into cloud-hosted
+code. This means that all functions become externalised (if feasible),
+deployed to AWS Lambda and automatically executed there, or rewritten as
+deployable units into local files. Furthermore, classes are wrapped into
+proxy classes for stateful access to individual methods as functions.
+
+Using function decorators in conjunction with the command line option
+--annotations, functions can be turned into cloud functions selectively
+and furthermore run with custom configuration beyond the default. The
+two kinds of decorators to place on top of a Python function definition
+are:
+- @cloudfunction
+- @cloudfunction(memory=X [MB],duration=X [s])
+Have a look at examples/decorated.py to copy the decorator code into
+your application.
 
 General instructions:
 - Install Python 3.5+
@@ -39,6 +49,7 @@ Interesting files:
 - examples/values.csv: sample data for the sample script
 - examples/fib.py: another application script, not internally
   lambada-fied
+- examples/decorated.py: how to use decorators
 
 Not so interesting files:
 - lambadalib/codegen.py: external, from
@@ -46,3 +57,6 @@ Not so interesting files:
 - examples/functions/: directory with some testing scripts, can be
   ignored
 - README: you're reading it right now
+
+More information on the design and implementation of (a previous version
+of) Lambada is available in a preprint: https://arxiv.org/abs/1705.08169
