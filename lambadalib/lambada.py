@@ -364,6 +364,9 @@ def moveinternal(moveglobals, function, arguments, body, local, lambdafunctions,
 				if monadic:
 					f.write("__lambdalog = ''\n")
 
+			# FIXME: workaround, still needed when no print is found anywhere due to template referencing log
+			f.write("__lambdalog = ''\n")
+
 			# FIXME: module dependencies are global; missing scanned per-method dependencies
 			for importmodule in imports:
 				f.write("import {:s}\n".format(importmodule))
