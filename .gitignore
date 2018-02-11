@@ -2,3 +2,7 @@
 _lambada.log
 *_lambdafied.py
 _test.sh
+
+build
+dist
+lambadatransformer.egg-info/
