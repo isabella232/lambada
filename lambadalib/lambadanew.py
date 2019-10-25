@@ -11,6 +11,7 @@ import os
 
 from lambadalib import codegen
 from lambadalib import functionproxy
+from lambadalib import providers
 
 def printlambada(*s):
 	red = "\033[1;31m"
@@ -178,119 +179,6 @@ class FuncListener(ast.NodeVisitor):
 			self.bodies[node.name] = newbody
 		self.generic_visit(node)
 
-def analyse(functionname, functions, module, annotations):
-	if not module:
-		modulename = inspect.stack()[-1][1]
-		printlambada("targeting", modulename, "...")
-	else:
-		modulename = module
-
-	modulestring = open(modulename).read()
-	tree = ast.parse(modulestring, modulename)
-	fl = FuncListener(functionname, functions, annotations)
-	fl.visit(tree)
-	for function in functions:
-		for dep in fl.deps.get(function, []):
-			if dep in fl.tainted:
-				printlambada("AST: dependency {:s} -> {:s} leads to tainting".format(function, dep))
-				fl.tainted.append(function)
-	for function in functions:
-		for dep in fl.deps.get(function, []):
-			if dep in fl.filtered:
-				taint = True
-				#if dep not in fl.tainted:
-				#	printlambada("AST: dependency {:s} -> {:s} leads to unfiltering".format(function, dep))
-				#	taint = False
-				if taint:
-					fl.tainted.append(dep)
-	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features, fl.classes, fl.cfcs
-
-def cloudtool(endpoint, whisk):
-	if whisk:
-		return whisktool(endpoint)
-	else:
-		return awstool(endpoint)
-
-def awstool(endpoint):
-	if endpoint:
-		return "aws --endpoint-url {:s}".format(endpoint)
-	else:
-		return "aws"
-
-def whisktool(endpoint):
-	if endpoint:
-		return "wsk -i --apihost {:s}".format(endpoint) #Check if applies
-	else:
-		return "wsk -i"
-
-template = """
-def FUNCNAME_remote(event, context):
-	UNPACKPARAMETERS
-	FUNCTIONIMPLEMENTATION
-
-def FUNCNAME_stub(jsoninput):
-	event = json.loads(jsoninput)
-	ret = FUNCNAME_remote(event, None)
-	return json.dumps(ret)
-
-def FUNCNAME(PARAMETERSHEAD):
-	local = LOCAL
-	jsoninput = json.dumps(PACKEDPARAMETERS)
-	if local:
-		jsonoutput = FUNCNAME_stub(jsoninput)
-	else:
-		functionname = "FUNCNAME_lambda"
-		runcode = [CLOUDTOOL, "lambda", "invoke", "--function-name", functionname, "--payload", jsoninput, "_lambada.log"]
-		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
-		stdoutresults = proc.communicate()[0].decode("utf-8")
-		jsonoutput = open("_lambada.log").read()
-		proc = subprocess.Popen(["rm", "_lambada.log"])
-		if "errorMessage" in jsonoutput:
-			raise Exception("Lambda Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
-	output = json.loads(jsonoutput)
-	if "log" in output:
-		if local:
-			if output["log"]:
-				print(output["log"])
-		else:
-			lambada.lambadamonad(output["log"])
-	return output["ret"]
-"""
-
-whisktemplate = """
-def FUNCNAME_remote(event):
-	UNPACKPARAMETERS
-	FUNCTIONIMPLEMENTATION
-
-def FUNCNAME_stub(jsoninput):
-	event = json.loads(jsoninput)
-	ret = FUNCNAME_remote(event)
-	return json.dumps(ret)
-
-def FUNCNAME(PARAMETERSHEAD):
-	local = LOCAL
-	jsoninput = json.dumps(PACKEDPARAMETERS)
-	if local:
-		jsonoutput = FUNCNAME_stub(jsoninput)
-	else:
-		functionname = "FUNCNAME_whisk"
-		runcode = [CLOUDTOOL, "action", "invoke", functionname, "--param-file", jsoninput, "--result"]
-		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
-		stdoutresults = proc.communicate()[0].decode("utf-8")
-		jsonoutput = json.dumps(stdoutresults)
-		#proc = subprocess.Popen(["rm", "_lambada.log"])
-		if "errorMessage" in jsonoutput:
-			raise Exception("Lambda Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
-	output = json.loads(jsonoutput)
-	if "log" in output:
-		if local:
-			if output["log"]:
-				print(output["log"])
-		else:
-			lambada.lambadamonad(output["log"])
-	return output["ret"]
-"""
-
 proxytemplate = """
 def FUNCNAME(PARAMETERSHEAD):
 	msg = PACKEDPARAMETERS
@@ -334,30 +222,38 @@ def netproxy_handler(event, context):
 	return n
 """
 
-def getlambdafunctions(endpoint):
-	# historic awscli pre-JSON
-	#runcode = "{:s} lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7".format(awstool(endpoint))
-	runcode = "{:s} lambda list-functions | grep FunctionName | cut -d '\"' -f 4".format(awstool(endpoint))
-	proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
-	stdoutresults = proc.communicate()[0].decode("utf-8")
-	lambdafunctions = stdoutresults.strip().split("\n")
-	return lambdafunctions
 
-def getcloudfunctions(endpoint, whisk=False):
-	if whisk:
-		#get every function name from action list without namespaces and skipping the first line 
-		runcode = "{:s} action list | tail -n +2 | awk \'{{name = split($1, a, \"/\"); print a[name]}}\'".format(whisktool(endpoint))
+def analyse(functionname, functions, module, annotations):
+	if not module:
+		modulename = inspect.stack()[-1][1]
+		printlambada("targeting", modulename, "...")
 	else:
-		# historic awscli pre-JSON
-		#runcode = "{:s} lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7".format(awstool(endpoint))
-		runcode = "{:s} lambda list-functions | grep FunctionName | cut -d '\"' -f 4".format(awstool(endpoint))
-	
-	proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
-	stdoutresults = proc.communicate()[0].decode("utf-8")
-	cloudfunctions = stdoutresults.strip().split("\n")
-	return cloudfunctions
+		modulename = module
 
-def moveinternal(moveglobals, function, arguments, body, local, cloudfunctions, imports, dependencies, tainted, features, role, debug, endpoint, globalvars, cfc, whisk):
+	modulestring = open(modulename).read()
+	tree = ast.parse(modulestring, modulename)
+	fl = FuncListener(functionname, functions, annotations)
+	fl.visit(tree)
+	for function in functions:
+		for dep in fl.deps.get(function, []):
+			if dep in fl.tainted:
+				printlambada("AST: dependency {:s} -> {:s} leads to tainting".format(function, dep))
+				fl.tainted.append(function)
+	for function in functions:
+		for dep in fl.deps.get(function, []):
+			if dep in fl.filtered:
+				taint = True
+				#if dep not in fl.tainted:
+				#	printlambada("AST: dependency {:s} -> {:s} leads to unfiltering".format(function, dep))
+				#	taint = False
+				if taint:
+					fl.tainted.append(dep)
+	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features, fl.classes, fl.cfcs
+
+def moveinternal(moveglobals, function, arguments, body, local, imports, dependencies, tainted, features, role, debug, globalvars, cfc, provider = providers.AWSLambda()):
+
+	cloudfunctions = provider.getCloudFunctions()
+
 	def pack(x):
 		return "\"{:s}\": {:s}".format(x, x)
 	def unpack(x):
@@ -368,8 +264,7 @@ def moveinternal(moveglobals, function, arguments, body, local, cloudfunctions, 
 	unpackparameters = ";".join(map(unpack, parameters))
 	packedparameters = "{" + ",".join(map(pack, parameters)) + "}"
 
-	t = (template, whisktemplate)[whisk]
-	t = t.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in cloudtool(endpoint, whisk).split(" ")]))
+	t = provider.getTemplate()
 	t = t.replace("FUNCNAME", function)
 	t = t.replace("PARAMETERSHEAD", ",".join(parameters))
 	t = t.replace("PACKEDPARAMETERS", packedparameters)
@@ -386,129 +281,134 @@ def moveinternal(moveglobals, function, arguments, body, local, cloudfunctions, 
 	for module in ("json", "subprocess"):
 		if not module in moveglobals:
 			exec("import {:s}".format(module), moveglobals)
+	
 	if debug and not local:
 		print(t)
+	
 	exec(t, moveglobals)
 	#moveglobals[function] = str
 
 	if local:
 		return t
 	else:
-		cloudfunction = "{:s}_{:s}".format(function, ("lambda", "whisk")[whisk])
+		cloudfunction = "{:s}_{:s}".format(function, provider.getName())
+
 		if cloudfunction in cloudfunctions:
 			printlambada("deployer: already deployed {:s}".format(cloudfunction))
 		else:
 			printlambada("deployer: new deployment of {:s}".format(cloudfunction))
 
-			# FIXME: Lambda is extremely picky about how zip files are constructed... must use tmpdir instead of tmpname
-			if True:
-				tmpdir = tempfile.TemporaryDirectory()
-				filename = "{:s}/{:s}.py".format(tmpdir.name, cloudfunction)
-				f = open(filename, "w")
-			else:
-				f = tempfile.NamedTemporaryFile(suffix=".py", mode="w")
-				filename = f.name
+		#TODO check?
+		# FIXME: Lambda is extremely picky about how zip files are constructed... must use tmpdir instead of tmpname
+		if True:
+			tmpdir = tempfile.TemporaryDirectory()
+			filename = "{:s}/{:s}.py".format(tmpdir.name, cloudfunction)
+			f = open(filename, "w")
+		else:
+			f = tempfile.NamedTemporaryFile(suffix=".py", mode="w")
+			filename = f.name
 
-			if "print" in features.get(function, []):
-				f.write("from __future__ import print_function\n")
-				f.write("__lambdalog = ''\n")
-				f.write("def print(*args, **kwargs):\n")
-				f.write("\tglobal __lambdalog\n")
-				f.write("\t__lambdalog += ''.join([str(arg) for arg in args]) + '\\n'\n")
-			else:
-				# Monadic behaviour: print from dependencies
-				monadic = False
-				for dep in dependencies.get(function, []):
-					if "print" in features.get(dep, []):
+		if "print" in features.get(function, []):
+			f.write("from __future__ import print_function\n")
+			f.write("__lambdalog = ''\n")
+			f.write("def print(*args, **kwargs):\n")
+			f.write("\tglobal __lambdalog\n")
+			f.write("\t__lambdalog += ''.join([str(arg) for arg in args]) + '\\n'\n")
+		else:
+			# Monadic behaviour: print from dependencies
+			monadic = False
+			for dep in dependencies.get(function, []):
+				if "print" in features.get(dep, []):
 						monadic = True
 				if monadic:
 					f.write("__lambdalog = ''\n")
 
-			# FIXME: workaround, still needed when no print is found anywhere due to template referencing log
-			f.write("__lambdalog = ''\n")
+		# FIXME: workaround, still needed when no print is found anywhere due to template referencing log
+		f.write("__lambdalog = ''\n")
 
-			# FIXME: module dependencies are global; missing scanned per-method dependencies
-			for importmodule in imports:
-				f.write("import {:s}\n".format(importmodule))
-			for globalvar in globalvars:
-				f.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
-			if len(dependencies.get(function, [])) > 0:
-				f.write("import json\n")
-				f.write("from boto3 import client as boto3_client\n")
-				#f.write("lambda_client = boto3_client('lambda')\n")
-				if endpoint:
-					f.write("lambda_client = boto3_client('lambda', endpoint_url='{:s}')\n".format(endpoint))
-				else:
-					f.write("lambda_client = boto3_client('lambda')\n")
+		# FIXME: module dependencies are global; missing scanned per-method dependencies
+		for importmodule in imports:
+			f.write("import {:s}\n".format(importmodule))
+		
+		for globalvar in globalvars:
+			f.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
+		
+		#TODO check
+		if len(dependencies.get(function, [])) > 0:
+			f.write("import json\n")
+			f.write("from boto3 import client as boto3_client\n")
+			#f.write("lambda_client = boto3_client('lambda')\n")
+			
+			#Uncomment this block
+			# if endpoint:
+			# 	f.write("lambda_client = boto3_client('lambda', endpoint_url='{:s}')\n".format(endpoint))
+			# else:
+			# 	f.write("lambda_client = boto3_client('lambda')\n")
+
+		f.write("\n")
+		for dep in dependencies.get(function, []):
+			f.write("# dep {:s}\n".format(dep))
+			t = proxytemplate
+			if monadic:
+				t = proxytemplate_monadic
+			depparameters = arguments.get(dep, [])
+			packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
+			t = t.replace("FUNCNAME", dep)
+			t = t.replace("PARAMETERSHEAD", ",".join(depparameters))
+			t = t.replace("PACKEDPARAMETERS", packeddepparameters)
+			f.write("{:s}\n".format(t))
 			f.write("\n")
-			for dep in dependencies.get(function, []):
-				f.write("# dep {:s}\n".format(dep))
-				t = proxytemplate
-				if monadic:
-					t = proxytemplate_monadic
-				depparameters = arguments.get(dep, [])
-				packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
-				t = t.replace("FUNCNAME", dep)
-				t = t.replace("PARAMETERSHEAD", ",".join(depparameters))
-				t = t.replace("PACKEDPARAMETERS", packeddepparameters)
-				f.write("{:s}\n".format(t))
-				f.write("\n")
-			
-			if not whisk:
-				f.write("def {:s}(event, context):\n".format(cloudfunction))
-			else:
-				f.write("def {:s}(event):\n".format(cloudfunction))
+		
+		f.write(provider.getFunctionSignature(cloudfunction))
 
-			f.write("\t{:s}\n".format(unpackparameters))
-			f.write("{:s}\n".format(gencode))
-			f.flush()
+		f.write("\t{:s}\n".format(unpackparameters))
+		f.write("{:s}\n".format(gencode))
+		f.flush()
 
-			zf = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
-			zipper = zipfile.ZipFile(zf, mode="w")
-			zipper.write(f.name, arcname="{:s}.py".format(cloudfunction) if not whisk else "__main__.py")
-			zipper.close()
-			zipname = zf.name
+		zf = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
+		zipper = zipfile.ZipFile(zf, mode="w")
+		zipper.write(f.name, arcname=provider.getMainFilename(cloudfunction))
+		zipper.close()
+		zipname = zf.name
+
+		printlambada("deployer: zip {:s} -> {:s}".format(cloudfunction, zipname))
+
+		runcode = provider.getCreationString(cloudfunction, role, zipname, cfc)
+
+		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+		proc.wait()
+
+		reverse = False
+		for revdepfunction in dependencies:
+			if revdepfunction in tainted:
+				continue
 			
-			printlambada("deployer: zip {:s} -> {:s}".format(cloudfunction, zipname))
+			for revdep in dependencies[revdepfunction]:
+				if revdep == function:
+					reverse = True
 			
-			if whisk:
-				runcode = "{:s} action create '{:s}' --kind python:3 --main '{:s}' '{:s}'".format(whisktool(endpoint), cloudfunction, cloudfunction, zipname)
-				if cfc:
-					if cfc.memory:
-						runcode += " --memory {}".format(cfc.memory)
-					if cfc.duration:
-						runcode += " --timeout {}".format(cfc.duration)
-			else:
-				runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(awstool(endpoint), cloudfunction, role, cloudfunction, cloudfunction, zipname)
-				if cfc:
-					if cfc.memory:
-						runcode += " --memory-size {}".format(cfc.memory)
-					if cfc.duration:
-						runcode += " --timeout {}".format(cfc.duration)
-			
+		if reverse:
+			printlambada("deployer: reverse dependencies require role authorisation")
+			runcode = "{:s} lambda add-permission --function-name '{:s}' --statement-id {:s}_reverse --action lambda:InvokeFunction --principal {:s}".format(provider.getTool(), cloudfunction, cloudfunction, role)
 			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
-			proc.wait()
+			proc.wait()	
 
-			reverse = False
-			for revdepfunction in dependencies:
-				if revdepfunction in tainted:
-					continue
-				for revdep in dependencies[revdepfunction]:
-					if revdep == function:
-						reverse = True
-			if reverse:
-				printlambada("deployer: reverse dependencies require role authorisation")
-				runcode = "{:s} lambda add-permission --function-name '{:s}' --statement-id {:s}_reverse --action lambda:InvokeFunction --principal {:s}".format(awstool(endpoint), cloudfunction, cloudfunction, role)
-				proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
-				proc.wait()				
 
 def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False, endpoint=None, annotations=False, whisk=False):
+
+	#Set provider
+	if whisk:
+		provider = providers.OpenWhisk(endpoint)
+	else:
+		provider = providers.AWSLambda(endpoint)
+
+	#TODO Lambdarolearn bit
 	if not lambdarolearn and not local and not whisk:
 		printlambada("role not set, trying to read environment variable LAMBDAROLEARN")
 		lambdarolearn = os.getenv("LAMBDAROLEARN")
 		if not lambdarolearn:
 			printlambada("environment variable not set, trying to assemble...")
-			runcode = "{} sts get-caller-identity --output text --query 'Account'".format(awstool(endpoint))
+			runcode = "{} sts get-caller-identity --output text --query 'Account'".format(provider.getTool())
 			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 			stdoutresults = proc.communicate()[0].decode("utf-8").strip()
 			if len(stdoutresults) == 12:
@@ -516,11 +416,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 				printlambada("... assembled", lambdarolearn)
 			if not lambdarolearn:
 				raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
-	if not local:
-		cloudfunctions = getcloudfunctions(endpoint, whisk)
-	else:
-		cloudfunctions = None
-	
+
 	#print(moveglobals)
 
 	imports = []
@@ -551,11 +447,11 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 			else:
 				mgvalue = str(mgvalue)
 			globalvars.append((moveglobal, mgvalue))
-
+	
 	tainted, args, bodies, dependencies, features, classbodies, cfcs = analyse(None, functions, module, annotations)
-	
+
 	#print("// imports", str(imports))
-	
+
 	tsource = ""
 	for classobj in classes:
 		functionproxy.scanclass(None, None, classobj.__name__)
@@ -565,17 +461,21 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 			printlambada("skip tainted", function)
 		else:
 			printlambada("move", function)
-			t = moveinternal(moveglobals, function, args, bodies.get(function, []), local, cloudfunctions, imports, dependencies, tainted, features, lambdarolearn, debug, endpoint, globalvars, cfcs.get(function, None), whisk)
+			t = moveinternal(moveglobals, function, args, bodies.get(function, []), local, imports, dependencies, tainted, features, lambdarolearn, debug, globalvars, cfcs.get(function, None), provider)
 			if t:
 				tsource += t
 		#analyse(function)
+	
 	#moveglobals["complextrig"] = complextrigmod
 
 	for classbody in classbodies:
 		tsource += codegen.to_source(classbodies[classbody], indent_with="\t")
+	
+	#TODO check netproxy_template for both	
 	if len(classbodies) > 0:
 		tsource += netproxy_template
 
+	#TODO check
 	if tsource:
 		for globalvar in globalvars:
 			tsource = "{:s} = {:s}\n".format(globalvar[0], globalvar[1]) + tsource
@@ -590,3 +490,5 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 		f = open(lambmodule, "w")
 		f.write(tsource)
 		f.close()
+
+	
