@@ -6,3 +6,5 @@ _test.sh
 build
 dist
 lambadatransformer.egg-info/
+.vscode/launch.json
+temperature.py

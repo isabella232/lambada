@@ -9,7 +9,7 @@ import subprocess
 import time
 import os
 
-from lambadalib import codegen
+from lambadalib.codegen import code_gen as codegen
 from lambadalib import functionproxy
 from lambadalib import providers
 
@@ -336,7 +336,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 		#TODO check
 		if len(dependencies.get(function, [])) > 0:
 			f.write("import json\n")
-			f.write("from boto3 import client as boto3_client\n")
+			f.write("from boto3 import client as boto3_client\n") #send http request
 			#f.write("lambda_client = boto3_client('lambda')\n")
 			
 			#Uncomment this block
