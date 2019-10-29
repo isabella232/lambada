@@ -1,11 +1,25 @@
 import subprocess
+import os
 
 from abc import ABC, abstractmethod
+
+def color(s):
+    return "\033[39m" + s + "\033[0m"
+
+# Accepted arguments as providers. The first value will be default
+PROVIDERS = ['lambda', 'whisk', 'ibm', 'google']
+
+def getProvider(provider, endpoint, role):
+    if not provider or provider == PROVIDERS[0]:
+        return AWSLambda(endpoint, role)
+    elif provider == PROVIDERS[1]:
+        return OpenWhisk(endpoint, role)
+    
 
 class Provider(ABC):
 
     @abstractmethod
-    def __init__(self, endpoint=None):
+    def __init__(self, endpoint=None, role=None):
         self.endpoint = endpoint
 
     @abstractmethod
@@ -33,7 +47,11 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def getCreationString(self, name, role, zipfile, cfc=None):
+    def getCreationString(self, name, zipfile, cfc=None):
+        pass
+    
+    @abstractmethod
+    def getAddPermissionString(self, name):
         pass
 
 
@@ -73,8 +91,9 @@ def FUNCNAME(PARAMETERSHEAD):
 
 class AWSLambda(Provider):
 
-    def __init__(self, endpoint=None):
+    def __init__(self, endpoint=None, role=None):
         super(AWSLambda, self).__init__(endpoint)
+        self.lambdarolearn = role
 
     def getTool(self):
         
@@ -105,8 +124,29 @@ class AWSLambda(Provider):
     def getMainFilename(self, name):
         return "{:s}.py".format(name)
 
-    def getCreationString(self, name, role, zipfile, cfc=None):
-        runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(self.getTool(), name, role, name, name, zipfile)
+    def setRole(self):
+        if not self.lambdarolearn:
+            print(color("Role not set, trying to read environment variable LAMBDAROLEARN"))
+            self.lambdarolearn = os.getenv("LAMBDAROLEARN")
+		    
+            if not self.lambdarolearn:
+                print(color("Environment variable not set, trying to assemble..."))
+                runcode = "{} sts get-caller-identity --output text --query 'Account'".format(self.getTool())
+                proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+                stdoutresults = proc.communicate()[0].decode("utf-8").strip()
+			    
+                if len(stdoutresults) == 12:
+                    self.lambdarolearn = "arn:aws:iam::{:s}:role/lambda_basic_execution".format(stdoutresults)
+                    print(color(("... assembled", self.lambdarolearn)))
+                    
+                if not self.lambdarolearn:
+                    raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
+
+    def getCreationString(self, name, zipfile, cfc=None):
+
+        self.setRole()
+
+        runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(self.getTool(), name, self.lambdarolearn, name, name, zipfile)
 		
         if cfc:
             if cfc.memory:
@@ -114,6 +154,13 @@ class AWSLambda(Provider):
             if cfc.duration:
                 runcode += " --timeout {}".format(cfc.duration)
         
+        return runcode
+
+    def getAddPermissionString(self, name):
+        self.setRole()
+
+        runcode = "{:s} lambda add-permission --function-name '{:s}' --statement-id {:s}_reverse --action lambda:InvokeFunction --principal {:s}".format(self.getTool(), name, name, self.lambdarolearn)
+
         return runcode
 
 whisktemplate = """
@@ -152,7 +199,7 @@ def FUNCNAME(PARAMETERSHEAD):
 
 class OpenWhisk(Provider):
 
-    def __init__(self, endpoint=None):
+    def __init__(self, endpoint=None, role=None):
         super(OpenWhisk, self).__init__(endpoint)
     
     def getTool(self):
@@ -183,7 +230,7 @@ class OpenWhisk(Provider):
     def getMainFilename(self, name):
         return "__main__.py"
 
-    def getCreationString(self, name, role, zipfile, cfc=None):
+    def getCreationString(self, name, zipfile, cfc=None):
         runcode = "{:s} action create '{:s}' --kind python:3 --main '{:s}' '{:s}'".format(self.getTool(), name, name, zipfile)
 		
         if cfc:
@@ -193,4 +240,7 @@ class OpenWhisk(Provider):
                 runcode += " --timeout {}".format(cfc.duration)
         
         return runcode
+
+    def getAddPermissionString(self, name):
+        return None
 

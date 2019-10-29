@@ -5,6 +5,7 @@ import imp
 import traceback
 
 from lambadalib import lambadanew as lambada
+from lambadalib import providers as providers
 
 def execute():
 	parser = argparse.ArgumentParser(description='Lambada - Automated Deployment of Python Methods to the (Lambda) Cloud')
@@ -14,7 +15,9 @@ def execute():
 	parser.add_argument('--endpoint', metavar='ep', type=str, nargs='?', help='service endpoint when not using AWS Lambda but e.g. Snafu')
 	parser.add_argument('--annotations', dest='annotations', action='store_const', const=True, default=False, help='only consider decorated functions')
 
-	parser.add_argument('--whisk', dest='whisk', action='store_const', const=True, default=False, help='OpenWhisk deployment (default: Lambda deployment)')
+	cloudproviders = providers.PROVIDERS
+	defaultprovider = cloudproviders[0]
+	parser.add_argument('--provider', dest='provider', type=str, choices=cloudproviders, default=defaultprovider, help='Cloud provider: {:s} (default: {:s})'.format(", ".join(cloudproviders), defaultprovider))
 
 	args = parser.parse_args()
 
@@ -26,7 +29,7 @@ def execute():
 		fileobj.close()
 
 		try:
-			lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug, endpoint=args.endpoint, annotations=args.annotations, whisk=args.whisk)
+			lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug, endpoint=args.endpoint, annotations=args.annotations, cloudprovider=args.provider)
 		except Exception as e:
 			print("Exception: {:s}".format(str(e)))
 			if args.debug:
