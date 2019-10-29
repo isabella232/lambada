@@ -333,17 +333,8 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 				for globalvar in globalvars:
 					f.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
 
-				#TODO check
 				if len(dependencies.get(function, [])) > 0:
-					f.write("import json\n")
-					f.write("from boto3 import client as boto3_client\n") #send http request
-					#f.write("lambda_client = boto3_client('lambda')\n")
-
-					#Uncomment this block
-					# if endpoint:
-					# 	f.write("lambda_client = boto3_client('lambda', endpoint_url='{:s}')\n".format(endpoint))
-					# else:
-					# 	f.write("lambda_client = boto3_client('lambda')\n")
+					f.write(provider.getHttpClientTemplate())
 
 				f.write("\n")
 				for dep in dependencies.get(function, []):

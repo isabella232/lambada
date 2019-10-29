@@ -54,6 +54,10 @@ class Provider(ABC):
     def getAddPermissionString(self, name):
         pass
 
+    @abstractmethod
+    def getHttpClientTemplate(self):
+        pass
+
 
 awstemplate = """
 def FUNCNAME_remote(event, context):
@@ -87,6 +91,18 @@ def FUNCNAME(PARAMETERSHEAD):
 		else:
 			lambada.lambadamonad(output["log"])
 	return output["ret"]
+"""
+
+awshttpclienttemplate = """
+import json
+from boto3 import client as boto3_client
+
+hasendpoint = HASENDPOINT
+
+if hasendpoint:
+    lambda_client = boto3_client('lambda', endpoint_url='ENDPOINT')
+else:
+    lambda_client = boto3_client('lambda')
 """
 
 class AWSLambda(Provider):
@@ -163,6 +179,16 @@ class AWSLambda(Provider):
 
         return runcode
 
+    def getHttpClientTemplate(self):
+
+        template = awshttpclienttemplate
+        template = template.replace("HASENDPOINT", "{:s}".format(bool(self.endpoint)))
+        
+        if(self.endpoint):
+            template = template.replace("ENDPOINT", self.endpoint)
+
+        return template
+
 whisktemplate = """
 def FUNCNAME_remote(event):
 	UNPACKPARAMETERS
@@ -195,6 +221,14 @@ def FUNCNAME(PARAMETERSHEAD):
 		else:
 			lambada.lambadamonad(output["log"])
 	return output["ret"]
+"""
+
+whiskhttpclienttemplate = """
+import subprocess
+import requests
+
+userpass = subprocess.check_output("wsk property get --auth", shell=True).split()[2].split(':')
+url = ENDPOINT + 'api/v1/namespaces/_/actions/'
 """
 
 class OpenWhisk(Provider):
@@ -243,4 +277,17 @@ class OpenWhisk(Provider):
 
     def getAddPermissionString(self, name):
         return None
+
+    def getHttpClientTemplate(self):
+
+        template = whiskhttpclienttemplate
+        
+        if self.endpoint:
+            apihost = self.endpoint
+        else:
+            apihost = subprocess.check_output("wsk property get --apihost", shell=True).split()[3]
+        
+        template = template.replace("ENDPOINT", "{:s}".format(apihost))
+
+        return template
 
