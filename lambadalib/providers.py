@@ -14,6 +14,8 @@ def getProvider(provider, endpoint, role):
         return AWSLambda(endpoint, role)
     elif provider == PROVIDERS[1]:
         return OpenWhisk(endpoint, role)
+    elif provider == PROVIDERS[2]:
+        return IBMCloud(endpoint, role)
     
 class Provider(ABC):
 
@@ -70,7 +72,7 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def getNetproxytemplate(self):
+    def getNetproxyTemplate(self):
         pass
 
 awstemplate = """
@@ -90,7 +92,7 @@ def FUNCNAME(PARAMETERSHEAD):
 	if local:
 		jsonoutput = FUNCNAME_stub(jsoninput)
 	else:
-		functionname = "FUNCNAME_lambda"
+		functionname = "FUNCNAME_PROVNAME"
 		runcode = [CLOUDTOOL, "lambda", "invoke", "--function-name", functionname, "--payload", jsoninput, "_lambada.log"]
 		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
 		stdoutresults = proc.communicate()[0].decode("utf-8")
@@ -128,7 +130,7 @@ else:
 awsproxytemplate = """
 def FUNCNAME(PARAMETERSHEAD):
 	msg = PACKEDPARAMETERS
-	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
+	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_PROVNAME", Payload=json.dumps(msg))
 	#response = json.loads(fullresponse["Payload"].read())
 	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
 
@@ -140,7 +142,7 @@ def FUNCNAME(PARAMETERSHEAD):
 	global __lambadalog
 	
 	msg = PACKEDPARAMETERS
-	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
+	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_PROVNAME", Payload=json.dumps(msg))
 	#response = json.loads(fullresponse["Payload"].read())
 	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
 	
@@ -265,7 +267,7 @@ class AWSLambda(Provider):
     def getProxyMonadicTemplate(self):
         return awsproxymonadictemplate
 
-    def getNetproxytemplate(self):
+    def getNetproxyTemplate(self):
         return awsnetproxytemplate
 
 whisktemplate = """
@@ -285,7 +287,7 @@ def FUNCNAME(PARAMETERSHEAD):
 	if local:
 		jsonoutput = FUNCNAME_stub(jsoninput)
 	else:
-		functionname = "FUNCNAME_whisk"
+		functionname = "FUNCNAME_PROVNAME"
 		runcode = [CLOUDTOOL, "action", "invoke", functionname, "--param-file", jsoninput, "--result"]
 		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
 		stdoutresults = proc.communicate()[0].decode("utf-8")
@@ -319,7 +321,7 @@ url = ENDPOINT + 'api/v1/namespaces/_/actions/'
 whiskproxytemplate = """
 def FUNCNAME(PARAMETERSHEAD):
 	msg = PACKEDPARAMETERS
-	url = "{:s}FUNCNAME_whisk".format(url)
+	url = "{:s}FUNCNAME_PROVNAME".format(url)
 	fullresponse = requests.post(url, json=json.dumps(msg), params={'blocking': 'true', 'result': 'true'}, auth=(userpass[0], userpass[1]))
 	response = json.loads(fullresponse.text.read().decode("utf-8"))
 	
@@ -331,7 +333,7 @@ def FUNCNAME(PARAMETERSHEAD):
 	global __lambadalog
 
 	msg = PACKEDPARAMETERS
-	url = "{:s}FUNCNAME_whisk".format(url)
+	url = "{:s}FUNCNAME_PROVNAME".format(url)
 	fullresponse = requests.post(url, json=json.dumps(msg), params={'blocking': 'true', 'result': 'true'}, auth=(userpass[0], userpass[1]))
 	response = json.loads(fullresponse.text.read().decode("utf-8"))
 	
@@ -373,14 +375,12 @@ class OpenWhisk(Provider):
         super(OpenWhisk, self).__init__(endpoint)
     
     def getTool(self):
-        
         if self.endpoint:
             return "wsk -i --apihost {:s}".format(self.endpoint)
         else:
             return "wsk -i"
 
     def getCloudFunctions(self):
-
 		#get every function name from action list without namespaces and skipping the first line 
         runcode = "{:s} action list | tail -n +2 | awk \'{{name = split($1, a, \"/\"); print a[name]}}\'".format(self.getTool())
         proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
@@ -415,13 +415,12 @@ class OpenWhisk(Provider):
         return None
 
     def getHttpClientTemplate(self):
-
         template = whiskhttpclienttemplate
         
         if self.endpoint:
             apihost = self.endpoint
         else:
-            apihost = subprocess.check_output("wsk property get --apihost", shell=True).split()[3]
+            apihost = subprocess.check_output("{:s} property get --apihost".format(self.getTool()), shell=True).split()[3]
         
         template = template.replace("ENDPOINT", "{:s}".format(apihost))
 
@@ -436,5 +435,52 @@ class OpenWhisk(Provider):
     def getProxyMonadicTemplate(self):
         return whiskproxymonadictemplate
 
-    def getNetproxytemplate(self):
+    def getNetproxyTemplate(self):
         return whisknetproxytemplate
+
+class IBMCloud(OpenWhisk):
+
+    def __init__(self, endpoint=None, role=None):
+        super(IBMCloud, self).__init__(endpoint)
+    
+    def getTool(self):
+        if self.endpoint:
+            return "ibmcloud fn --apihost {:s}".format(self.endpoint)
+        else:
+            return "ibmcloud fn"
+
+    def getCloudFunctions(self):
+        return super(IBMCloud, self).getCloudFunctions()
+
+    def getTemplate(self):
+        return super(IBMCloud, self).getTemplate()
+
+    def getName(self):
+        return "ibmcloud"
+
+    def getFunctionSignature(self, name):
+        return super(IBMCloud, self).getFunctionSignature(name)
+
+    def getMainFilename(self, name):
+        return super(IBMCloud, self).getMainFilename(name)
+
+    def getCreationString(self, name, zipfile, cfc=None):
+        return super(IBMCloud, self).getCreationString(name, zipfile, cfc)
+
+    def getAddPermissionString(self, name):
+        return super(IBMCloud, self).getAddPermissionString(name)
+
+    def getHttpClientTemplate(self):
+        return super(IBMCloud, self).getHttpClientTemplate()
+
+    def getArgsVariable(self):
+        return super(IBMCloud, self).getArgsVariable()
+
+    def getProxyTemplate(self):
+        return super(IBMCloud, self).getProxyTemplate()
+
+    def getProxyMonadicTemplate(self):
+        return super(IBMCloud, self).getProxyMonadicTemplate()
+
+    def getNetproxyTemplate(self):
+        return super(IBMCloud, self).getNetproxyTemplate()

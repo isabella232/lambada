@@ -222,6 +222,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 
 	t = provider.getTemplate()
 	t = t.replace("FUNCNAME", function)
+	t = t.replace("PROVNAME", provider.getName())
 	t = t.replace("PARAMETERSHEAD", ",".join(parameters))
 	t = t.replace("PACKEDPARAMETERS", packedparameters)
 	t = t.replace("UNPACKPARAMETERS", unpackparameters)
@@ -304,6 +305,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 					depparameters = arguments.get(dep, [])
 					packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
 					t = t.replace("FUNCNAME", dep)
+					t = t.replace("PROVNAME", provider.getName())
 					t = t.replace("PARAMETERSHEAD", ",".join(depparameters))
 					t = t.replace("PACKEDPARAMETERS", packeddepparameters)
 					f.write("{:s}\n".format(t))
@@ -406,7 +408,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 	
 	#TODO check netproxy_template for both	
 	if len(classbodies) > 0:
-		tsource += provider.getNetproxytemplate()
+		tsource += provider.getNetproxyTemplate()
 
 	#TODO check
 	if tsource:
@@ -418,7 +420,7 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 			tsource = "import {:s}\n".format(importmodule) + tsource
 		if debug:
 			print(tsource)
-		lambmodule = module.replace(".py", "_lambdafied.py")
+		lambmodule = module.replace(".py", "_lambadafied.py")
 		printlambada("store", lambmodule)
 		f = open(lambmodule, "w")
 		f.write(tsource)
