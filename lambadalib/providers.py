@@ -15,7 +15,6 @@ def getProvider(provider, endpoint, role):
     elif provider == PROVIDERS[1]:
         return OpenWhisk(endpoint, role)
     
-
 class Provider(ABC):
 
     @abstractmethod
@@ -58,6 +57,21 @@ class Provider(ABC):
     def getHttpClientTemplate(self):
         pass
 
+    @abstractmethod
+    def getArgsVariable(self):
+        pass
+
+    @abstractmethod
+    def getProxyTemplate(self):
+        pass
+
+    @abstractmethod
+    def getProxyMonadicTemplate(self):
+        pass
+
+    @abstractmethod
+    def getNetproxytemplate(self):
+        pass
 
 awstemplate = """
 def FUNCNAME_remote(event, context):
@@ -72,6 +86,7 @@ def FUNCNAME_stub(jsoninput):
 def FUNCNAME(PARAMETERSHEAD):
 	local = LOCAL
 	jsoninput = json.dumps(PACKEDPARAMETERS)
+	
 	if local:
 		jsonoutput = FUNCNAME_stub(jsoninput)
 	else:
@@ -81,28 +96,84 @@ def FUNCNAME(PARAMETERSHEAD):
 		stdoutresults = proc.communicate()[0].decode("utf-8")
 		jsonoutput = open("_lambada.log").read()
 		proc = subprocess.Popen(["rm", "_lambada.log"])
+		
 		if "errorMessage" in jsonoutput:
 			raise Exception("Lambda Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
+	
 	output = json.loads(jsonoutput)
+	
 	if "log" in output:
 		if local:
 			if output["log"]:
 				print(output["log"])
 		else:
 			lambada.lambadamonad(output["log"])
+	
 	return output["ret"]
 """
 
 awshttpclienttemplate = """
 import json
+
 from boto3 import client as boto3_client
 
 hasendpoint = HASENDPOINT
 
 if hasendpoint:
-    lambda_client = boto3_client('lambda', endpoint_url='ENDPOINT')
+	lambda_client = boto3_client('lambda', endpoint_url='ENDPOINT')
 else:
-    lambda_client = boto3_client('lambda')
+	lambda_client = boto3_client('lambda')
+"""
+
+awsproxytemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	msg = PACKEDPARAMETERS
+	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
+	#response = json.loads(fullresponse["Payload"].read())
+	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
+
+	return response["ret"]
+"""
+
+awsproxymonadictemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	global __lambadalog
+	
+	msg = PACKEDPARAMETERS
+	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
+	#response = json.loads(fullresponse["Payload"].read())
+	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
+	
+	if "log" in response:
+		__lambadalog += response["log"]
+
+	return response["ret"]
+"""
+
+awsnetproxytemplate = """
+import json
+import importlib
+
+def Netproxy(d, classname, name, args):
+	if "." in classname:
+		modname, classname = classname.split(".")
+		mod = importlib.import_module(modname)
+		importlib.reload(mod)
+		C = getattr(mod, classname)
+	else:
+		C = globals()[classname]
+	
+	_o = C()
+	_o.__dict__ = json.loads(d)
+	ret = getattr(_o, name)(*args)
+	d = json.dumps(_o.__dict__)
+	
+	return d, ret
+
+def netproxy_handler(event, context):
+	n = Netproxy(event["d"], event["classname"], event["name"], event["args"])
+	
+	return n
 """
 
 class AWSLambda(Provider):
@@ -112,14 +183,12 @@ class AWSLambda(Provider):
         self.lambdarolearn = role
 
     def getTool(self):
-        
         if self.endpoint:
             return "aws --endpoint-url {:s}".format(self.endpoint)
         else:
             return "aws"
 
     def getCloudFunctions(self):
-		
         # historic awscli pre-JSON
 		#runcode = "{:s} lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7".format(awstool(endpoint))
         runcode = "{:s} lambda list-functions | grep FunctionName | cut -d '\"' -f 4".format(self.getTool())
@@ -159,7 +228,6 @@ class AWSLambda(Provider):
                     raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
 
     def getCreationString(self, name, zipfile, cfc=None):
-
         self.setRole()
 
         runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(self.getTool(), name, self.lambdarolearn, name, name, zipfile)
@@ -180,7 +248,6 @@ class AWSLambda(Provider):
         return runcode
 
     def getHttpClientTemplate(self):
-
         template = awshttpclienttemplate
         template = template.replace("HASENDPOINT", "{:s}".format(bool(self.endpoint)))
         
@@ -189,19 +256,32 @@ class AWSLambda(Provider):
 
         return template
 
+    def getArgsVariable(self):
+        return "event"
+
+    def getProxyTemplate(self):
+        return awsproxytemplate
+
+    def getProxyMonadicTemplate(self):
+        return awsproxymonadictemplate
+
+    def getNetproxytemplate(self):
+        return awsnetproxytemplate
+
 whisktemplate = """
-def FUNCNAME_remote(event):
+def FUNCNAME_remote(args):
 	UNPACKPARAMETERS
 	FUNCTIONIMPLEMENTATION
 
 def FUNCNAME_stub(jsoninput):
-	event = json.loads(jsoninput)
-	ret = FUNCNAME_remote(event)
+	args = json.loads(jsoninput)
+	ret = FUNCNAME_remote(args)
 	return json.dumps(ret)
 
 def FUNCNAME(PARAMETERSHEAD):
 	local = LOCAL
 	jsoninput = json.dumps(PACKEDPARAMETERS)
+
 	if local:
 		jsonoutput = FUNCNAME_stub(jsoninput)
 	else:
@@ -211,24 +291,80 @@ def FUNCNAME(PARAMETERSHEAD):
 		stdoutresults = proc.communicate()[0].decode("utf-8")
 		jsonoutput = json.dumps(stdoutresults)
 		#proc = subprocess.Popen(["rm", "_lambada.log"])
+		
 		if "errorMessage" in jsonoutput:
 			raise Exception("Lambda Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
+
 	output = json.loads(jsonoutput)
+	
 	if "log" in output:
 		if local:
 			if output["log"]:
 				print(output["log"])
 		else:
 			lambada.lambadamonad(output["log"])
+
 	return output["ret"]
 """
 
 whiskhttpclienttemplate = """
 import subprocess
 import requests
+import json
 
 userpass = subprocess.check_output("wsk property get --auth", shell=True).split()[2].split(':')
 url = ENDPOINT + 'api/v1/namespaces/_/actions/'
+"""
+
+whiskproxytemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	msg = PACKEDPARAMETERS
+	url = "{:s}FUNCNAME_whisk".format(url)
+	fullresponse = requests.post(url, json=json.dumps(msg), params={'blocking': 'true', 'result': 'true'}, auth=(userpass[0], userpass[1]))
+	response = json.loads(fullresponse.text.read().decode("utf-8"))
+	
+	return response["ret"]
+"""
+
+whiskproxymonadictemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	global __lambadalog
+
+	msg = PACKEDPARAMETERS
+	url = "{:s}FUNCNAME_whisk".format(url)
+	fullresponse = requests.post(url, json=json.dumps(msg), params={'blocking': 'true', 'result': 'true'}, auth=(userpass[0], userpass[1]))
+	response = json.loads(fullresponse.text.read().decode("utf-8"))
+	
+	if "log" in response:
+		__lambadalog += response["log"]
+
+	return response["ret"]
+"""
+
+whisknetproxytemplate = """
+import json
+import importlib
+
+def Netproxy(d, classname, name, args):
+	if "." in classname:
+		modname, classname = classname.split(".")
+		mod = importlib.import_module(modname)
+		importlib.reload(mod)
+		C = getattr(mod, classname)
+	else:
+		C = globals()[classname]
+	
+	_o = C()
+	_o.__dict__ = json.loads(d)
+	ret = getattr(_o, name)(*args)
+	d = json.dumps(_o.__dict__)
+	
+	return d, ret
+
+def netproxy_handler(args):
+	n = Netproxy(args["d"], args["classname"], args["name"], args["args"])
+	
+	return n
 """
 
 class OpenWhisk(Provider):
@@ -259,7 +395,7 @@ class OpenWhisk(Provider):
         return "whisk"
 
     def getFunctionSignature(self, name):
-        return "def {:s}(event):\n".format(name)
+        return "def {:s}(args):\n".format(name)
 
     def getMainFilename(self, name):
         return "__main__.py"
@@ -291,3 +427,14 @@ class OpenWhisk(Provider):
 
         return template
 
+    def getArgsVariable(self):
+        return "args"
+
+    def getProxyTemplate(self):
+        return whiskproxytemplate
+
+    def getProxyMonadicTemplate(self):
+        return whiskproxymonadictemplate
+
+    def getNetproxytemplate(self):
+        return whisknetproxytemplate

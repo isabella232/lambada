@@ -84,7 +84,7 @@ class FuncListener(ast.NodeVisitor):
 		#printlambada("ASTRET:", node.value)
 		#a = ast.Assign([ast.Name("ret", ast.Store())], node.value)
 		#r = ast.Return(ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())]))
-		d = ast.Dict([ast.Str("ret"), ast.Str("log")], [node.value, ast.Name("__lambdalog", ast.Load())])
+		d = ast.Dict([ast.Str("ret"), ast.Str("log")], [node.value, ast.Name("__lambadalog", ast.Load())])
 		#b = ast.Assign([ast.Name("ret", ast.Store())], d)
 		#r = ast.Return(ast.Name("ret", ast.Load()))
 		#g = ast.Global(["__lambdalog"])
@@ -153,11 +153,11 @@ class FuncListener(ast.NodeVisitor):
 				if isinstance(linekind, ast.Return):
 					a = ast.Assign([ast.Name("ret", ast.Store())], linekind.value)
 					#r = ast.Return(ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())]))
-					d = ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())])
+					d = ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambadalog", ast.Load())])
 					b = ast.Assign([ast.Name("ret", ast.Store())], d)
 					r = ast.Return(ast.Name("ret", ast.Load()))
-					g = ast.Global(["__lambdalog"])
-					z = ast.Assign([ast.Name("__lambdalog", ast.Store())], ast.Str(""))
+					g = ast.Global(["__lambadalog"])
+					z = ast.Assign([ast.Name("__lambadalog", ast.Store())], ast.Str(""))
 
 					# FIXME: always assume log because here the monadic situation through dependencies is not yet clear
 					#if "print" in self.features.get(node.name, []):
@@ -178,50 +178,6 @@ class FuncListener(ast.NodeVisitor):
 			#print("-----8<-----")
 			self.bodies[node.name] = newbody
 		self.generic_visit(node)
-
-proxytemplate = """
-def FUNCNAME(PARAMETERSHEAD):
-	msg = PACKEDPARAMETERS
-	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
-	#response = json.loads(fullresponse["Payload"].read())
-	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
-	return response["ret"]
-"""
-
-proxytemplate_monadic = """
-def FUNCNAME(PARAMETERSHEAD):
-	global __lambdalog
-	msg = PACKEDPARAMETERS
-	fullresponse = lambda_client.invoke(FunctionName="FUNCNAME_lambda", Payload=json.dumps(msg))
-	#response = json.loads(fullresponse["Payload"].read())
-	response = json.loads(fullresponse["Payload"].read().decode("utf-8"))
-	if "log" in response:
-		__lambdalog += response["log"]
-	return response["ret"]
-"""
-
-netproxy_template = """
-import json
-import importlib
-def Netproxy(d, classname, name, args):
-	if "." in classname:
-		modname, classname = classname.split(".")
-		mod = importlib.import_module(modname)
-		importlib.reload(mod)
-		C = getattr(mod, classname)
-	else:
-		C = globals()[classname]
-	_o = C()
-	_o.__dict__ = json.loads(d)
-	ret = getattr(_o, name)(*args)
-	d = json.dumps(_o.__dict__)
-	return d, ret
-
-def netproxy_handler(event, context):
-	n = Netproxy(event["d"], event["classname"], event["name"], event["args"])
-	return n
-"""
-
 
 def analyse(functionname, functions, module, annotations):
 	if not module:
@@ -258,7 +214,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 		return "\"{:s}\": {:s}".format(x, x)
 	def unpack(x):
 		#return "{:s} = float(event[\"{:s}\"])".format(x, x)
-		return "{:s} = event[\"{:s}\"]".format(x, x)
+		return "{:s} = {:s}[\"{:s}\"]".format(provider.getArgsVariable, x, x)
 
 	parameters = arguments.get(function, [])
 	unpackparameters = ";".join(map(unpack, parameters))
@@ -310,10 +266,10 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 
 			if "print" in features.get(function, []):
 				f.write("from __future__ import print_function\n")
-				f.write("__lambdalog = ''\n")
+				f.write("__lambadalog = ''\n")
 				f.write("def print(*args, **kwargs):\n")
-				f.write("\tglobal __lambdalog\n")
-				f.write("\t__lambdalog += ''.join([str(arg) for arg in args]) + '\\n'\n")
+				f.write("\tglobal __lambadalog\n")
+				f.write("\t__lambadalog += ''.join([str(arg) for arg in args]) + '\\n'\n")
 			else:
 				# Monadic behaviour: print from dependencies
 				monadic = False
@@ -321,10 +277,10 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 					if "print" in features.get(dep, []):
 							monadic = True
 					if monadic:
-						f.write("__lambdalog = ''\n")
+						f.write("__lambadalog = ''\n")
 
 				# FIXME: workaround, still needed when no print is found anywhere due to template referencing log
-				f.write("__lambdalog = ''\n")
+				f.write("__lambadalog = ''\n")
 
 				# FIXME: module dependencies are global; missing scanned per-method dependencies
 				for importmodule in imports:
@@ -337,11 +293,14 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 					f.write(provider.getHttpClientTemplate())
 
 				f.write("\n")
+				
 				for dep in dependencies.get(function, []):
 					f.write("# dep {:s}\n".format(dep))
-					t = proxytemplate
+					t = provider.getProxyTemplate()
+
 					if monadic:
-						t = proxytemplate_monadic
+						t = provider.getProxyMonadicTemplate()
+
 					depparameters = arguments.get(dep, [])
 					packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
 					t = t.replace("FUNCNAME", dep)
@@ -447,14 +406,14 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 	
 	#TODO check netproxy_template for both	
 	if len(classbodies) > 0:
-		tsource += netproxy_template
+		tsource += provider.getNetproxytemplate()
 
 	#TODO check
 	if tsource:
 		for globalvar in globalvars:
 			tsource = "{:s} = {:s}\n".format(globalvar[0], globalvar[1]) + tsource
 		# FIXME: only needed when monadic...
-		tsource = "__lambdalog = ''\n" + tsource
+		tsource = "__lambadalog = ''\n" + tsource
 		for importmodule in imports + ["json", "subprocess"]:
 			tsource = "import {:s}\n".format(importmodule) + tsource
 		if debug:
@@ -464,5 +423,3 @@ def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False,
 		f = open(lambmodule, "w")
 		f.write(tsource)
 		f.close()
-
-	
