@@ -1,13 +1,19 @@
 Lambada - Automated Deployment of Python Methods to the (Lambda) Cloud
-Copyright (C) 2016-17 Josef Spillner <xmpp:josef.spillner@swissjabber.ch>
+Copyright (C) 2016-18 Josef Spillner <josef.spillner@zhaw.ch>
+          (C) 2019 Zurich University of Applied Sciences
+with contributions by Josef Spillner and Daiana Boruta
 =========================================================================
 
 Lambada is an executable Python module which dynamically re-wites any
 module or script it is included in or invoked with into cloud-hosted
 code. This means that all functions become externalised (if feasible),
-deployed to AWS Lambda and automatically executed there, or rewritten as
-deployable units into local files. Furthermore, classes are wrapped into
-proxy classes for stateful access to individual methods as functions.
+deployed to a FaaS provider and automatically executed there, or
+rewritten as deployable units into local files. Furthermore, classes are
+wrapped into proxy classes for stateful access to individual methods as
+functions.
+
+Supported FaaS providers: AWS Lambda, IBM Cloud Functions (+ OpenWhisk),
+Google Cloud Functions.
 
 Using function decorators in conjunction with the command line option
 --annotations, functions can be turned into cloud functions selectively
@@ -30,7 +36,7 @@ Instructions for local/remote mode and Snafu:
 - Run Lambada with --endpoint http://localhost:10000
 - It will deploy function packages into the given Snafu instance
 
-Instructions for remote mode and AWS:
+Instructions for remote mode and AWS (similar for the other providers):
 - Create an account at AWS
 - Configure lambda so that e.g. `aws lambda list-functions' works
 - Configure to have at least one dedicated execution role, and enter its
@@ -60,3 +66,6 @@ Not so interesting files:
 
 More information on the design and implementation of (a previous version
 of) Lambada is available in a preprint: https://arxiv.org/abs/1705.08169
+
+Have a look at our ongoing serverless research!
+https://blog.zhaw.ch/splab/tag/serverless/
