@@ -630,9 +630,9 @@ class GoogleCloud(Provider):
         return "main.py"
 
     def getCreationString(self, functionname, zipfile, cfc=None):
-        Zipfile.ZipFile(zipfile).extractall(path=functionname)
+        Zipfile.ZipFile(zipfile).extractall(path="/tmp/{:s}".format(functionname))
         
-        runcode = "{:s} deploy  '{:s}' --runtime python37 --entry-point '{:s}' --source '{:s}' --trigger-http".format(self.getTool(), functionname, functionname, functionname)
+        runcode = "{:s} deploy  '{:s}' --runtime python37 --entry-point '{:s}' --source '/tmp/{:s}' --trigger-http".format(self.getTool(), functionname, functionname, functionname)
 		
         if cfc:
             if cfc.memory:
