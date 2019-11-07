@@ -280,55 +280,55 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 					if monadic:
 						f.write("__lambadalog = ''\n")
 
-				# FIXME: workaround, still needed when no print is found anywhere due to template referencing log
-				f.write("__lambadalog = ''\n")
+			# FIXME: workaround, still needed when no print is found anywhere due to template referencing log
+			f.write("__lambadalog = ''\n")
 
-				# FIXME: module dependencies are global; missing scanned per-method dependencies
-				for importmodule in imports:
-					f.write("import {:s}\n".format(importmodule))
+			# FIXME: module dependencies are global; missing scanned per-method dependencies
+			for importmodule in imports:
+				f.write("import {:s}\n".format(importmodule))
 
-				for globalvar in globalvars:
-					f.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
+			for globalvar in globalvars:
+				f.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
 
-				if len(dependencies.get(function, [])) > 0:
-					f.write(provider.getHttpClientTemplate())
+			if len(dependencies.get(function, [])) > 0:
+				f.write(provider.getHttpClientTemplate())
 
-				f.write("\n")
+			f.write("\n")
 				
-				for dep in dependencies.get(function, []):
-					f.write("# dep {:s}\n".format(dep))
-					t = provider.getProxyTemplate()
+			for dep in dependencies.get(function, []):
+				f.write("# dep {:s}\n".format(dep))
+				t = provider.getProxyTemplate()
 
-					if monadic:
-						t = provider.getProxyMonadicTemplate()
+				if monadic:
+					t = provider.getProxyMonadicTemplate()
 
-					depparameters = arguments.get(dep, [])
-					packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
-					t = t.replace("FUNCNAME", dep)
-					t = t.replace("PROVNAME", provider.getName())
-					t = t.replace("PARAMETERSHEAD", ",".join(depparameters))
-					t = t.replace("PACKEDPARAMETERS", packeddepparameters)
-					f.write("{:s}\n".format(t))
-					f.write("\n")
+				depparameters = arguments.get(dep, [])
+				packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
+				t = t.replace("FUNCNAME", dep)
+				t = t.replace("PROVNAME", provider.getName())
+				t = t.replace("PARAMETERSHEAD", ",".join(depparameters))
+				t = t.replace("PACKEDPARAMETERS", packeddepparameters)
+				f.write("{:s}\n".format(t))
+				f.write("\n")
 
-				f.write(provider.getFunctionSignature(cloudfunction))
+			f.write(provider.getFunctionSignature(cloudfunction))
 
-				f.write("\t{:s}\n".format(unpackparameters))
-				f.write("{:s}\n".format(gencode))
-				f.flush()
+			f.write("\t{:s}\n".format(unpackparameters))
+			f.write("{:s}\n".format(gencode))
+			f.flush()
 
-				zf = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
-				zipper = zipfile.ZipFile(zf, mode="w")
-				zipper.write(f.name, arcname=provider.getMainFilename(cloudfunction))
-				zipper.close()
-				zipname = zf.name
+			zf = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
+			zipper = zipfile.ZipFile(zf, mode="w")
+			zipper.write(f.name, arcname=provider.getMainFilename(cloudfunction))
+			zipper.close()
+			zipname = zf.name
 
-				printlambada("deployer: zip {:s} -> {:s}".format(cloudfunction, zipname))
+			printlambada("deployer: zip {:s} -> {:s}".format(cloudfunction, zipname))
 
-				runcode = provider.getCreationString(cloudfunction, zipname, cfc)
+			runcode = provider.getCreationString(cloudfunction, zf, cfc)
 
-				proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
-				proc.wait()
+			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+			proc.wait()
 
 			reverse = False
 			for revdepfunction in dependencies:

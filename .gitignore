@@ -1,6 +1,6 @@
 *.pyc
 _lambada.log
-*_lambdafied.py
+*_lambadafied.py
 _test.sh
 
 build

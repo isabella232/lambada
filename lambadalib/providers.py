@@ -1,5 +1,6 @@
 import subprocess
 import os
+import zipfile as Zipfile
 
 from abc import ABC, abstractmethod
 
@@ -16,6 +17,8 @@ def getProvider(provider, endpoint, role):
         return OpenWhisk(endpoint, role)
     elif provider == PROVIDERS[2]:
         return IBMCloud(endpoint, role)
+    elif provider == PROVIDERS[3]:
+        return GoogleCloud(endpoint, role)
     
 class Provider(ABC):
 
@@ -48,7 +51,7 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def getCreationString(self, name, zipfile, cfc=None):
+    def getCreationString(self, functionname, zipfile, cfc=None):
         pass
     
     @abstractmethod
@@ -197,6 +200,7 @@ class AWSLambda(Provider):
         proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
         stdoutresults = proc.communicate()[0].decode("utf-8")
         cloudfunctions = stdoutresults.strip().split("\n")
+        
         return cloudfunctions
 
     def getTemplate(self):
@@ -229,10 +233,10 @@ class AWSLambda(Provider):
                 if not self.lambdarolearn:
                     raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
 
-    def getCreationString(self, name, zipfile, cfc=None):
+    def getCreationString(self, functionname, zipfile, cfc=None):
         self.setRole()
 
-        runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(self.getTool(), name, self.lambdarolearn, name, name, zipfile)
+        runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(self.getTool(), functionname, self.lambdarolearn, functionname, functionname, zipfile.name)
 		
         if cfc:
             if cfc.memory:
@@ -386,6 +390,7 @@ class OpenWhisk(Provider):
         proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
         stdoutresults = proc.communicate()[0].decode("utf-8")
         cloudfunctions = stdoutresults.strip().split("\n")
+        
         return cloudfunctions
 
     def getTemplate(self):
@@ -400,8 +405,8 @@ class OpenWhisk(Provider):
     def getMainFilename(self, name):
         return "__main__.py"
 
-    def getCreationString(self, name, zipfile, cfc=None):
-        runcode = "{:s} action create '{:s}' --kind python:3 --main '{:s}' '{:s}'".format(self.getTool(), name, name, zipfile)
+    def getCreationString(self, functionname, zipfile, cfc=None):
+        runcode = "{:s} action create '{:s}' --kind python:3 --main '{:s}' '{:s}'".format(self.getTool(), functionname, functionname, zipfile.name)
 		
         if cfc:
             if cfc.memory:
@@ -484,3 +489,177 @@ class IBMCloud(OpenWhisk):
 
     def getNetproxyTemplate(self):
         return super(IBMCloud, self).getNetproxyTemplate()
+
+gcloudtemplate = """
+def FUNCNAME_remote(args):
+	UNPACKPARAMETERS
+	FUNCTIONIMPLEMENTATION
+
+def FUNCNAME_stub(jsoninput):
+	args = json.loads(jsoninput)
+	ret = FUNCNAME_remote(args)
+	return json.dumps(ret)
+
+def FUNCNAME(PARAMETERSHEAD):
+	local = LOCAL
+	jsoninput = json.dumps(PACKEDPARAMETERS)
+
+	if local:
+		jsonoutput = FUNCNAME_stub(jsoninput)
+	else:
+		functionname = "FUNCNAME_PROVNAME"
+		runcode = [CLOUDTOOL, "action", "invoke", functionname, "--param-file", jsoninput, "--result"]
+		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
+		stdoutresults = proc.communicate()[0].decode("utf-8")
+		jsonoutput = json.dumps(stdoutresults)
+		#proc = subprocess.Popen(["rm", "_lambada.log"])
+		
+		if "errorMessage" in jsonoutput:
+			raise Exception("Lambda Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
+
+	output = json.loads(jsonoutput)
+	
+	if "log" in output:
+		if local:
+			if output["log"]:
+				print(output["log"])
+		else:
+			lambada.lambadamonad(output["log"])
+
+	return output["ret"]
+"""
+
+gcloudhttpclienttemplate = """
+import requests
+
+url = "REGION-PROJECT.cloudfunctions.net/"
+"""
+
+gcloudproxytemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	msg = PACKEDPARAMETERS
+	url = "{:s}FUNCNAME_PROVNAME".format(url)
+	fullresponse = requests.post(url, data=json.dumps(msg))
+	response = json.loads(fullresponse.text.read().decode("utf-8"))
+	
+	return response["ret"]
+"""
+
+gcloudproxymonadictemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	global __lambadalog
+
+	msg = PACKEDPARAMETERS
+	url = "{:s}FUNCNAME_PROVNAME".format(url)
+	fullresponse = requests.post(url, data=json.dumps(msg))
+	response = json.loads(fullresponse.text.read().decode("utf-8"))
+	
+	if "log" in response:
+		__lambadalog += response["log"]
+
+	return response["ret"]
+"""
+
+gcloudnetproxytemplate = """
+import json
+import importlib
+
+def Netproxy(d, classname, name, args):
+	if "." in classname:
+		modname, classname = classname.split(".")
+		mod = importlib.import_module(modname)
+		importlib.reload(mod)
+		C = getattr(mod, classname)
+	else:
+		C = globals()[classname]
+	
+	_o = C()
+	_o.__dict__ = json.loads(d)
+	ret = getattr(_o, name)(*args)
+	d = json.dumps(_o.__dict__)
+	
+	return d, ret
+
+def netproxy_handler(args):
+	n = Netproxy(args["d"], args["classname"], args["name"], args["args"])
+	
+	return n
+"""
+
+
+class GoogleCloud(Provider):
+
+    def __init__(self, endpoint=None, role=None):
+        super(GoogleCloud, self).__init__(endpoint)
+
+        self.region = subprocess.check_output("gcloud config get-value functions/region", shell=True).split()[0]
+
+        if self.region == "(unset)":
+            raise Exception("gcloud functions' region not set")
+
+        self.project = subprocess.check_output("gcloud config get-value core/project", shell=True).split()[0]
+
+        if self.project == "(unset)":
+            raise Exception("gcloud project not set")
+    
+    def getTool(self):
+        return "gcloud functions"
+
+    def getCloudFunctions(self):
+        #get every function name from action list without namespaces and skipping the first line 
+        runcode = "{:s} list | tail -n +2 | awk \'{{print($1)}}\'".format(self.getTool())
+        proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+        stdoutresults = proc.communicate()[0].decode("utf-8")
+        cloudfunctions = stdoutresults.strip().split("\n")
+
+        if(cloudfunctions == ['']):
+            cloudfunctions = []
+        
+        return cloudfunctions
+
+    def getTemplate(self):
+        return gcloudtemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
+
+    def getName(self):
+        return "gcloud"
+
+    def getFunctionSignature(self, name):
+        return "def {:s}(request):\n".format(name)
+
+    def getMainFilename(self, name):
+        return "main.py"
+
+    def getCreationString(self, functionname, zipfile, cfc=None):
+        Zipfile.ZipFile(zipfile).extractall(path="/tmp/{:s}".format(functionname))
+        
+        runcode = "{:s} deploy  '{:s}' --runtime python37 --entry-point '{:s}' --source '/tmp/{:s}' --trigger-http".format(self.getTool(), functionname, functionname, functionname)
+		
+        if cfc:
+            if cfc.memory:
+                runcode += " --memory {}".format(cfc.memory)
+            if cfc.duration:
+                runcode += " --timeout {}".format(cfc.duration)
+        
+        return runcode
+
+    def getAddPermissionString(self, name):
+        return None
+
+    def getHttpClientTemplate(self):
+        template = gcloudhttpclienttemplate
+        template = template.replace("REGION", self.region)
+        template = template.replace("PROJECT", self.project)
+        
+        return template
+
+    def getArgsVariable(self):
+        return "request"
+
+    def getProxyTemplate(self):
+        return whiskproxytemplate
+
+    def getProxyMonadicTemplate(self):
+        return whiskproxymonadictemplate
+
+    def getNetproxyTemplate(self):
+        return whisknetproxytemplate
