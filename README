@@ -1,4 +1,4 @@
-Lambada - Automated Deployment of Python Methods to the (Lambda) Cloud
+Lambada - Automated Deployment of Python Methods to the (Lambda/Multi-FaaS) Cloud
 Copyright (C) 2016-18 Josef Spillner <josef.spillner@zhaw.ch>
           (C) 2019 Zurich University of Applied Sciences
 with contributions by Josef Spillner and Daiana Boruta
@@ -13,7 +13,7 @@ wrapped into proxy classes for stateful access to individual methods as
 functions.
 
 Supported FaaS providers: AWS Lambda, IBM Cloud Functions (+ OpenWhisk),
-Google Cloud Functions.
+Google Cloud Functions. Select via --provider {lambda,whisk,ibm,google}.
 
 Using function decorators in conjunction with the command line option
 --annotations, functions can be turned into cloud functions selectively
@@ -32,23 +32,29 @@ Instructions for local mode:
 - Run Lambada with --local (and if you prefer with --debug also)
 - It will create copies of files suffixed with _lambdafied.py
 
-Instructions for local/remote mode and Snafu:
+Instructions for local/remote mode and self-hosted Snafu or OpenWhisk:
 - Run Lambada with --endpoint http://localhost:10000
-- It will deploy function packages into the given Snafu instance
+- It will deploy function packages into the given instance of Snafu or
+  OpenWhisk
 
-Instructions for remote mode and AWS (similar for the other providers):
-- Create an account at AWS
-- Configure lambda so that e.g. `aws lambda list-functions' works
+Instructions for remote mode and AWS, IBM or Google:
+- Create an account at the cloud provider
+- Configure the CLI tools so that listing functions works
+  * for Lambda: `aws lambda list-functions'
+  * for IBM: `ibmcloud fn list'
+  * etc.
 - Configure to have at least one dedicated execution role, and enter its
-  unique number (ARN)
+  unique number (ARN) specifically in AWS
   * as environment variable: LAMBADAROLEARN=..., e.g. through wrapper
     script `run.sh'
   * as parameter to lambada.move(lambdarolearn=...)
   * or simply leave it out and Lambada will auto-detect your role
-- Now you can run Lambada without --local
+- Now you can run Lambada without --local and deploy directly to the
+  FaaS provider
 
 Interesting files:
 - lambadalib/lambada.py: main module file
+- lambadalib/lambadanew.py: refactored main module file
 - lambadalib/functionproxy.py: class proxy wrapper
 - examples/myapp.py: sample lambada-fied application script
 - examples/myapp-tests.py: full unit test coverage for the sample script
