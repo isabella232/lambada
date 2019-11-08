@@ -3,6 +3,7 @@ import os
 import zipfile as Zipfile
 
 from abc import ABC, abstractmethod
+from lambadalib import visitors
 
 def color(s):
     return "\033[39m" + s + "\033[0m"
@@ -76,6 +77,10 @@ class Provider(ABC):
 
     @abstractmethod
     def getNetproxyTemplate(self):
+        pass
+
+    @abstractmethod
+    def getNodeVisitor(self, functionname, functions, annotations):
         pass
 
 awstemplate = """
@@ -274,6 +279,9 @@ class AWSLambda(Provider):
     def getNetproxyTemplate(self):
         return awsnetproxytemplate
 
+    def getNodeVisitor(self, functionname, functions, annotations):
+        return visitors.FuncListener(functionname, functions, annotations)
+
 whisktemplate = """
 def FUNCNAME_remote(args):
 	UNPACKPARAMETERS
@@ -443,6 +451,9 @@ class OpenWhisk(Provider):
     def getNetproxyTemplate(self):
         return whisknetproxytemplate
 
+    def getNodeVisitor(self, functionname, functions, annotations):
+        return visitors.FuncListener(functionname, functions, annotations)
+
 class IBMCloud(OpenWhisk):
 
     def __init__(self, endpoint=None, role=None):
@@ -489,6 +500,9 @@ class IBMCloud(OpenWhisk):
 
     def getNetproxyTemplate(self):
         return super(IBMCloud, self).getNetproxyTemplate()
+
+    def getNodeVisitor(self, functionname, functions, annotations):
+        return super(IBMCloud, self).getNodeVisitor(functionname, functions, annotations)
 
 gcloudtemplate = """
 def FUNCNAME_remote(args):
@@ -663,3 +677,6 @@ class GoogleCloud(Provider):
 
     def getNetproxyTemplate(self):
         return whisknetproxytemplate
+
+    def getNodeVisitor(self, functionname, functions, annotations):
+        return visitors.FuncListenerRequest(functionname, functions, annotations)
