@@ -219,12 +219,14 @@ class FuncListenerRequest(FuncListener):
 			for linekind in node.body:
 				if isinstance(linekind, ast.Return):
 					a = ast.Assign([ast.Name("ret", ast.Store())], linekind.value)
-					t = ast.Tuple([ast.Name("ret", ast.Load()), ast.Name("__lambadalog", ast.Load())], ast.Load())
-					b = ast.Assign([ast.Name("ret", ast.Store())], t)
+					d = ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambadalog", ast.Load())])
+					c = ast.Call(func=ast.Name("jsonify", ast.Load()), args=[d], keywords=[])
+					b = ast.Assign([ast.Name("ret", ast.Store())], c)
 					r = ast.Return(ast.Name("ret", ast.Load()))
 					g = ast.Global(["__lambadalog"])
 					z = ast.Assign([ast.Name("__lambadalog", ast.Store())], ast.Str(""))
-
+					i = ast.ImportFrom("flask", [ast.alias(name='jsonify', asname=None)], 0)
+			
 					# FIXME: always assume log because here the monadic situation through dependencies is not yet clear
 					#if "print" in self.features.get(node.name, []):
 					#	r = ast.Return(ast.Dict([ast.Str("ret"), ast.Str("log")], [ast.Name("ret", ast.Load()), ast.Name("__lambdalog", ast.Load())]))
@@ -233,7 +235,7 @@ class FuncListenerRequest(FuncListener):
 					#print("//return", linekind.value)
 					#print(ast.dump(a, annotate_fields=False))
 					#print(ast.dump(r, annotate_fields=False))
-					newbody = [g] + newbody + [a, b, z, r]
+					newbody = [i, g] + newbody + [a, b, z, r]
 					#Assign([Name('ret', Store())], ...)
 					#Return(Name('ret', Load()))
 				else:

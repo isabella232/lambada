@@ -465,44 +465,8 @@ class IBMCloud(OpenWhisk):
         else:
             return "ibmcloud fn"
 
-    def getCloudFunctions(self):
-        return super(IBMCloud, self).getCloudFunctions()
-
-    def getTemplate(self):
-        return super(IBMCloud, self).getTemplate()
-
     def getName(self):
         return "ibmcloud"
-
-    def getFunctionSignature(self, name):
-        return super(IBMCloud, self).getFunctionSignature(name)
-
-    def getMainFilename(self, name):
-        return super(IBMCloud, self).getMainFilename(name)
-
-    def getCreationString(self, name, zipfile, cfc=None):
-        return super(IBMCloud, self).getCreationString(name, zipfile, cfc)
-
-    def getAddPermissionString(self, name):
-        return super(IBMCloud, self).getAddPermissionString(name)
-
-    def getHttpClientTemplate(self):
-        return super(IBMCloud, self).getHttpClientTemplate()
-
-    def getArgsVariable(self):
-        return super(IBMCloud, self).getArgsVariable()
-
-    def getProxyTemplate(self):
-        return super(IBMCloud, self).getProxyTemplate()
-
-    def getProxyMonadicTemplate(self):
-        return super(IBMCloud, self).getProxyMonadicTemplate()
-
-    def getNetproxyTemplate(self):
-        return super(IBMCloud, self).getNetproxyTemplate()
-
-    def getNodeVisitor(self, functionname, functions, annotations):
-        return super(IBMCloud, self).getNodeVisitor(functionname, functions, annotations)
 
 gcloudtemplate = """
 def FUNCNAME_remote(args):
