@@ -96,7 +96,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 	if local:
 		return t
 	else:
-		cloudfunction = "{:s}_{:s}".format(function, provider.getName())
+		cloudfunction = "{:s}-{:s}".format(function, provider.getName())
 
 		if cloudfunction in cloudfunctions:
 			printlambada("deployer: already deployed {:s}".format(cloudfunction))

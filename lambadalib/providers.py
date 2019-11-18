@@ -9,7 +9,7 @@ def color(s):
     return "\033[39m" + s + "\033[0m"
 
 # Accepted arguments as providers. The first value will be default
-PROVIDERS = ['lambda', 'whisk', 'ibm', 'google']
+PROVIDERS = ['lambda', 'whisk', 'ibm', 'google', 'fission']
 
 def getProvider(provider, endpoint, role):
     if not provider or provider == PROVIDERS[0]:
@@ -20,6 +20,8 @@ def getProvider(provider, endpoint, role):
         return IBMCloud(endpoint, role)
     elif provider == PROVIDERS[3]:
         return GoogleCloud(endpoint, role)
+    elif provider == PROVIDERS[4]:
+        return Fission(endpoint, role)
     
 class Provider(ABC):
 
@@ -634,13 +636,213 @@ class GoogleCloud(Provider):
         return "request"
 
     def getProxyTemplate(self):
-        return whiskproxytemplate
+        return gcloudproxytemplate
 
     def getProxyMonadicTemplate(self):
-        return whiskproxymonadictemplate
+        return gcloudproxymonadictemplate
 
     def getNetproxyTemplate(self):
-        return whisknetproxytemplate
+        return gcloudnetproxytemplate
 
     def getNodeVisitor(self, functionname, functions, annotations):
-        return visitors.FuncListenerRequest(functionname, functions, annotations)
+        return visitors.FuncListenerGCloud(functionname, functions, annotations)
+
+fissiontemplate = """
+def FUNCNAME_remote(args):
+	UNPACKPARAMETERS
+	FUNCTIONIMPLEMENTATION
+
+def FUNCNAME_stub(jsoninput):
+	args = json.loads(jsoninput)
+	ret = FUNCNAME_remote(args)
+	return json.dumps(ret)
+
+def FUNCNAME(PARAMETERSHEAD):
+	local = LOCAL
+	jsoninput = json.dumps(PACKEDPARAMETERS)
+
+	if local:
+		jsonoutput = FUNCNAME_stub(jsoninput)
+	else:
+		functionname = "FUNCNAME_PROVNAME"
+		runcode = [CLOUDTOOL, "test", "--name", functionname, "--body", jsoninput]
+		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
+		stdoutresults = proc.communicate()[0].decode("utf-8")
+		jsonoutput = json.dumps(stdoutresults)
+		#proc = subprocess.Popen(["rm", "_lambada.log"])
+		
+		if "errorMessage" in jsonoutput:
+			raise Exception("Fission Remote Issue: {:s}; runcode: {:s}".format(jsonoutput, " ".join(runcode)))
+
+	output = json.loads(jsonoutput)
+	
+	if "log" in output:
+		if local:
+			if output["log"]:
+				print(output["log"])
+		else:
+			lambada.lambadamonad(output["log"])
+
+	return output["ret"]
+"""
+
+fissionhttpclienttemplate = """
+import requests
+
+url = "FISSION_ROUTER/"
+"""
+
+fissionproxytemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	msg = PACKEDPARAMETERS
+	url = "{:s}FUNCNAME_PROVNAME".format(url)
+	fullresponse = requests.post(url, data=json.dumps(msg))
+	response = json.loads(fullresponse.text.read().decode("utf-8"))
+	
+	return response["ret"]
+"""
+
+fissionproxymonadictemplate = """
+def FUNCNAME(PARAMETERSHEAD):
+	global __lambadalog
+
+	msg = PACKEDPARAMETERS
+	url = "{:s}FUNCNAME_PROVNAME".format(url)
+	fullresponse = requests.post(url, data=json.dumps(msg))
+	response = json.loads(fullresponse.text.read().decode("utf-8"))
+	
+	if "log" in response:
+		__lambadalog += response["log"]
+
+	return response["ret"]
+"""
+
+fissionnetproxytemplate = """
+import json
+import importlib
+
+def Netproxy(d, classname, name, args):
+	if "." in classname:
+		modname, classname = classname.split(".")
+		mod = importlib.import_module(modname)
+		importlib.reload(mod)
+		C = getattr(mod, classname)
+	else:
+		C = globals()[classname]
+	
+	_o = C()
+	_o.__dict__ = json.loads(d)
+	ret = getattr(_o, name)(*args)
+	d = json.dumps(_o.__dict__)
+	
+	return d, ret
+
+def netproxy_handler(args):
+	n = Netproxy(args["d"], args["classname"], args["name"], args["args"])
+	
+	return n
+"""
+
+
+class Fission(Provider):
+
+    def __init__(self, endpoint=None, role=None):
+        super(Fission, self).__init__(endpoint)
+
+        #TODO get user-set evironment
+        self.router = endpoint
+    
+    def getTool(self):
+        return "fission function"
+
+    def getCloudFunctions(self):
+        #get every function name from function list without namespaces and skipping the first line 
+        runcode = "{:s} list | tail -n +2 | awk \'{{print($1)}}\'".format(self.getTool())
+        proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+        stdoutresults = proc.communicate()[0].decode("utf-8")
+        cloudfunctions = stdoutresults.strip().split("\n")
+
+        if(cloudfunctions == ['']):
+            cloudfunctions = []
+        
+        return cloudfunctions
+
+    def getTemplate(self):
+        return fissiontemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
+
+    def getName(self):
+        return "fission"
+
+    def getFunctionSignature(self, name):
+        #return "def {:s}():\n".format(name)
+        return "def main():\n"
+
+    def getMainFilename(self, name):
+        return "{:s}-fission.py".format(name)
+
+    def setRouter(self):
+        if not self.router:
+            print(color("Router not set, trying to read environment variable FISSION_ROUTER"))
+            self.router = os.getenv("FISSION_ROUTER")
+
+            if not self.router:
+                print(color("Environment variable not set, trying to get minikube's ip"))
+                runcode = "minikube ip"
+                proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+                stdoutresults = proc.communicate()[0].decode("utf-8").strip()
+                
+                if len(stdoutresults) <= 15:
+                    ip = "{:s}".format(stdoutresults)
+                    
+                    runcode = "kubectl -n fission get svc router -o jsonpath='{...nodePort}'"
+                    proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
+                    stdoutresults = proc.communicate()[0].decode("utf-8").strip()
+
+                    if len(stdoutresults) <= 5:
+                        port = "{:s}".format(stdoutresults)
+                        self.router = "{:s}:{:s}".format(ip, port)
+
+                if not self.router:
+                    raise Exception("Router not set - check endpoint or FISSION_ROUTER")
+
+    def getCreationString(self, functionname, zipfile, cfc=None):
+        self.setRouter()
+
+        Zipfile.ZipFile(zipfile).extractall(path="/tmp/{:s}".format(functionname))
+        
+        runcode = "{:s} create --name '{:s}' --env python --code '/tmp/{:s}/{:s}.py'".format(self.getTool(), functionname, functionname, functionname)
+		
+        if cfc:
+            if cfc.memory:
+                runcode += " --maxmemory {}".format(cfc.memory)
+            if cfc.duration:
+                runcode += " --fntimeout {}".format(cfc.duration)
+
+        runcode += " && fission route create --function {:s} --url /{:s}".format(functionname, functionname)
+        
+        return runcode
+
+    def getAddPermissionString(self, name):
+        return None
+
+    def getHttpClientTemplate(self):
+        self.setRouter()
+
+        template = fissionhttpclienttemplate.replace("FISSION_ROUTER", self.router)
+        
+        return template
+
+    def getArgsVariable(self):
+        return "request"
+
+    def getProxyTemplate(self):
+        return fissionproxytemplate
+
+    def getProxyMonadicTemplate(self):
+        return fissionproxymonadictemplate
+
+    def getNetproxyTemplate(self):
+        return fissionnetproxytemplate
+
+    def getNodeVisitor(self, functionname, functions, annotations):
+        return visitors.FuncListenerGCloud(functionname, functions, annotations)

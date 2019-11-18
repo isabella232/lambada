@@ -158,7 +158,7 @@ class FuncListener(ast.NodeVisitor):
 			self.bodies[node.name] = newbody
 		self.generic_visit(node)
 
-class FuncListenerRequest(FuncListener):
+class FuncListenerGCloud(FuncListener):
 	def visit_FunctionDef(self, node):
 		#printlambada("AST:", node.name, node.args)
 		#printlambada("AST:", node.args.args[0].arg)
