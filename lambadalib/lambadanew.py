@@ -195,10 +195,10 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 					proc.wait()	
 
 
-def move(moveglobals, local=False, lambdarolearn=None, module=None, debug=False, endpoint=None, annotations=False, cloudprovider=None):
+def move(moveglobals, local=False, module=None, debug=False, annotations=False, cloudprovider=None, cloudproviderargs=None):
 
 	#Set provider
-	provider = providers.getProvider(cloudprovider, endpoint, lambdarolearn)
+	provider = providers.getProvider(cloudprovider, cloudproviderargs)
 
 	#print(moveglobals)
 

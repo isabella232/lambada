@@ -6,35 +6,35 @@ from abc import ABC, abstractmethod
 from lambadalib import visitors
 
 def color(s):
-    return "\033[39m" + s + "\033[0m"
+    return "\033[33m" + s + "\033[0m"
 
 # Accepted arguments as providers. The first value will be default
 PROVIDERS = ['lambda', 'whisk', 'ibm', 'google', 'fission']
 
-def getProvider(provider, endpoint, role):
+def getProvider(provider, providerargs):
     if not provider or provider == PROVIDERS[0]:
-        return AWSLambda(endpoint, role)
+        return AWSLambda(providerargs)
     elif provider == PROVIDERS[1]:
-        return OpenWhisk(endpoint, role)
+        return OpenWhisk(providerargs)
     elif provider == PROVIDERS[2]:
-        return IBMCloud(endpoint, role)
+        return IBMCloud(providerargs)
     elif provider == PROVIDERS[3]:
-        return GoogleCloud(endpoint, role)
+        return GoogleCloud(providerargs)
     elif provider == PROVIDERS[4]:
-        return Fission(endpoint, role)
+        return Fission(providerargs)
     
 class Provider(ABC):
 
     @abstractmethod
-    def __init__(self, endpoint=None, role=None):
-        self.endpoint = endpoint
+    def __init__(self, providerargs={}):
+        self.endpoint = providerargs.get("endpoint")
 
     @abstractmethod
-    def getTool(self, endpoint):
+    def getTool(self):
         pass
 
     @abstractmethod
-    def getCloudFunctions(self, endpoint):
+    def getCloudFunctions(self):
         pass
 
     @abstractmethod
@@ -190,9 +190,9 @@ def netproxy_handler(event, context):
 
 class AWSLambda(Provider):
 
-    def __init__(self, endpoint=None, role=None):
-        super(AWSLambda, self).__init__(endpoint)
-        self.lambdarolearn = role
+    def __init__(self, providerargs={}):
+        super(AWSLambda, self).__init__(providerargs)
+        self.lambdarolearn = providerargs.get("role")
 
     def getTool(self):
         if self.endpoint:
@@ -385,8 +385,8 @@ def netproxy_handler(args):
 
 class OpenWhisk(Provider):
 
-    def __init__(self, endpoint=None, role=None):
-        super(OpenWhisk, self).__init__(endpoint)
+    def __init__(self, providerargs={}):
+        super(OpenWhisk, self).__init__(providerargs)
     
     def getTool(self):
         if self.endpoint:
@@ -458,8 +458,8 @@ class OpenWhisk(Provider):
 
 class IBMCloud(OpenWhisk):
 
-    def __init__(self, endpoint=None, role=None):
-        super(IBMCloud, self).__init__(endpoint)
+    def __init__(self, providerargs={}):
+        super(IBMCloud, self).__init__(providerargs)
     
     def getTool(self):
         if self.endpoint:
@@ -569,8 +569,8 @@ def netproxy_handler(args):
 
 class GoogleCloud(Provider):
 
-    def __init__(self, endpoint=None, role=None):
-        super(GoogleCloud, self).__init__(endpoint)
+    def __init__(self, providerargs={}):
+        super(GoogleCloud, self).__init__(providerargs)
 
         self.region = subprocess.check_output("gcloud config get-value functions/region", shell=True).split()[0]
 
@@ -746,11 +746,11 @@ def netproxy_handler(args):
 
 class Fission(Provider):
 
-    def __init__(self, endpoint=None, role=None):
-        super(Fission, self).__init__(endpoint)
+    def __init__(self, providerargs={}):
+        super(Fission, self).__init__(providerargs)
 
         #TODO get user-set evironment
-        self.router = endpoint
+        self.router = providerargs.get("endpoint")
     
     def getTool(self):
         return "fission function"

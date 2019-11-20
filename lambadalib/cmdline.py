@@ -19,6 +19,9 @@ def execute():
 	defaultprovider = cloudproviders[0]
 	parser.add_argument('--provider', dest='provider', type=str, choices=cloudproviders, default=defaultprovider, help='Cloud provider: {:s} (default: {:s})'.format(", ".join(cloudproviders), defaultprovider))
 
+	#TODO: Add extra options for each provider and put inside cloudproviderargs
+	##e.g. lamdarolearn for aws
+
 	args = parser.parse_args()
 
 	for module in args.modules:
@@ -29,7 +32,7 @@ def execute():
 		fileobj.close()
 
 		try:
-			lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug, endpoint=args.endpoint, annotations=args.annotations, cloudprovider=args.provider)
+			lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug, annotations=args.annotations, cloudprovider=args.provider, cloudproviderargs={"endpoint": args.endpoint})
 		except Exception as e:
 			print("Exception: {:s}".format(str(e)))
 			if args.debug:
