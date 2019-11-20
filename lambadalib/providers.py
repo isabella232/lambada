@@ -58,7 +58,7 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def getCreationString(self, functionname, zipfile, cfc=None):
+    def getCreationString(self, functionname, zipfile, cloudfunctionconfig=None):
         pass
     
     @abstractmethod
@@ -205,8 +205,6 @@ class AWSLambda(Provider):
             return "aws"
 
     def getCloudFunctions(self):
-        # historic awscli pre-JSON
-		#runcode = "{:s} lambda list-functions | sed 's/.*\(arn:.*:function:.*\)/\\1/' | cut -f 1 | cut -d ':' -f 7".format(awstool(endpoint))
         runcode = "{:s} lambda list-functions | grep FunctionName | cut -d '\"' -f 4".format(self.getTool())
         proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
         stdoutresults = proc.communicate()[0].decode("utf-8")
@@ -244,16 +242,16 @@ class AWSLambda(Provider):
                 if not self.lambdarolearn:
                     raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
 
-    def getCreationString(self, functionname, zipfile, cfc=None):
+    def getCreationString(self, functionname, zipfile, cloudfunctionconfig=None):
         self.setRole()
 
         runcode = "{:s} lambda create-function --function-name '{:s}' --description 'Lambada remote function' --runtime 'python3.6' --role '{:s}' --handler '{:s}.{:s}' --zip-file 'fileb://{:s}'".format(self.getTool(), functionname, self.lambdarolearn, functionname, functionname, zipfile.name)
 		
-        if cfc:
-            if cfc.memory:
-                runcode += " --memory-size {}".format(cfc.memory)
-            if cfc.duration:
-                runcode += " --timeout {}".format(cfc.duration)
+        if cloudfunctionconfig:
+            if cloudfunctionconfig.memory:
+                runcode += " --memory-size {}".format(cloudfunctionconfig.memory)
+            if cloudfunctionconfig.duration:
+                runcode += " --timeout {}".format(cloudfunctionconfig.duration)
         
         return runcode
 
@@ -419,14 +417,14 @@ class OpenWhisk(Provider):
     def getMainFilename(self, name):
         return "__main__.py"
 
-    def getCreationString(self, functionname, zipfile, cfc=None):
+    def getCreationString(self, functionname, zipfile, cloudfunctionconfig=None):
         runcode = "{:s} action create '{:s}' --kind python:3 --main '{:s}' '{:s}'".format(self.getTool(), functionname, functionname, zipfile.name)
 		
-        if cfc:
-            if cfc.memory:
-                runcode += " --memory {}".format(cfc.memory)
-            if cfc.duration:
-                runcode += " --timeout {}".format(cfc.duration)
+        if cloudfunctionconfig:
+            if cloudfunctionconfig.memory:
+                runcode += " --memory {}".format(cloudfunctionconfig.memory)
+            if cloudfunctionconfig.duration:
+                runcode += " --timeout {}".format(cloudfunctionconfig.duration)
         
         return runcode
 
@@ -613,16 +611,16 @@ class GoogleCloud(Provider):
     def getMainFilename(self, name):
         return "main.py"
 
-    def getCreationString(self, functionname, zipfile, cfc=None):
+    def getCreationString(self, functionname, zipfile, cloudfunctionconfig=None):
         Zipfile.ZipFile(zipfile).extractall(path="/tmp/{:s}".format(functionname))
         
         runcode = "{:s} deploy  '{:s}' --runtime python37 --entry-point '{:s}' --source '/tmp/{:s}' --trigger-http".format(self.getTool(), functionname, functionname, functionname)
 		
-        if cfc:
-            if cfc.memory:
-                runcode += " --memory {}".format(cfc.memory)
-            if cfc.duration:
-                runcode += " --timeout {}".format(cfc.duration)
+        if cloudfunctionconfig:
+            if cloudfunctionconfig.memory:
+                runcode += " --memory {}".format(cloudfunctionconfig.memory)
+            if cloudfunctionconfig.duration:
+                runcode += " --timeout {}".format(cloudfunctionconfig.duration)
         
         return runcode
 
@@ -809,18 +807,18 @@ class Fission(Provider):
                 if not self.router:
                     raise Exception("Router not set - check endpoint or FISSION_ROUTER")
 
-    def getCreationString(self, functionname, zipfile, cfc=None):
+    def getCreationString(self, functionname, zipfile, cloudfunctionconfig=None):
         self.setRouter()
 
         Zipfile.ZipFile(zipfile).extractall(path="/tmp/{:s}".format(functionname))
         
         runcode = "{:s} create --name '{:s}' --env python --code '/tmp/{:s}/{:s}.py'".format(self.getTool(), functionname, functionname, functionname)
 		
-        if cfc:
-            if cfc.memory:
-                runcode += " --maxmemory {}".format(cfc.memory)
-            if cfc.duration:
-                runcode += " --fntimeout {}".format(cfc.duration)
+        if cloudfunctionconfig:
+            if cloudfunctionconfig.memory:
+                runcode += " --maxmemory {}".format(cloudfunctionconfig.memory)
+            if cloudfunctionconfig.duration:
+                runcode += " --fntimeout {}".format(cloudfunctionconfig.duration)
 
         runcode += " && fission route create --function {:s} --url /{:s}".format(functionname, functionname)
         
