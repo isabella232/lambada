@@ -225,6 +225,8 @@ class AWSLambda(Provider):
         return "{:s}.py".format(name)
 
     def setRole(self):
+        LAMBDAROLEANRLENGTH = 12
+        
         if not self.lambdarolearn:
             providerPrint("Role not set, trying to read environment variable LAMBDAROLEARN")
             self.lambdarolearn = os.getenv("LAMBDAROLEARN")
@@ -235,7 +237,7 @@ class AWSLambda(Provider):
                 proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
                 stdoutresults = proc.communicate()[0].decode("utf-8").strip()
 			    
-                if len(stdoutresults) == 12:
+                if len(stdoutresults) == LAMBDAROLEANRLENGTH:
                     self.lambdarolearn = "arn:aws:iam::{:s}:role/lambda_basic_execution".format(stdoutresults)
                     providerPrint("... assembled {:s}".format(self.lambdarolearn))
                     
@@ -783,6 +785,9 @@ class Fission(Provider):
         return "{:s}-fission.py".format(name)
 
     def setRouter(self):
+        IPLENGTH = 15
+        PORTLENGTH = 5
+
         if not self.router:
             providerPrint("Router not set, trying to read environment variable FISSION_ROUTER")
             self.router = os.getenv("FISSION_ROUTER")
@@ -793,14 +798,14 @@ class Fission(Provider):
                 proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
                 stdoutresults = proc.communicate()[0].decode("utf-8").strip()
                 
-                if len(stdoutresults) <= 15:
+                if len(stdoutresults) <= IPLENGTH:
                     ip = "{:s}".format(stdoutresults)
                     
                     runcode = "kubectl -n fission get svc router -o jsonpath='{...nodePort}'"
                     proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
                     stdoutresults = proc.communicate()[0].decode("utf-8").strip()
 
-                    if len(stdoutresults) <= 5:
+                    if len(stdoutresults) <= PORTLENGTH:
                         port = "{:s}".format(stdoutresults)
                         self.router = "{:s}:{:s}".format(ip, port)
 

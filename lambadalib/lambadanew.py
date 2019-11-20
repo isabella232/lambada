@@ -32,25 +32,23 @@ def analyse(functionname, functions, module, annotations, provider):
 
 	modulestring = open(modulename).read()
 	tree = ast.parse(modulestring, modulename)
-	fl = provider.getNodeVisitor(functionname, functions, annotations)
-	fl.visit(tree)
+	nodevisitor = provider.getNodeVisitor(functionname, functions, annotations)
+	nodevisitor.visit(tree)
 	for function in functions:
-		for dep in fl.deps.get(function, []):
-			if dep in fl.tainted:
+		for dep in nodevisitor.deps.get(function, []):
+			if dep in nodevisitor.tainted:
 				printlambada("AST: dependency {:s} -> {:s} leads to tainting".format(function, dep))
-				fl.tainted.append(function)
+				nodevisitor.tainted.append(function)
 	for function in functions:
-		for dep in fl.deps.get(function, []):
-			if dep in fl.filtered:
+		for dep in nodevisitor.deps.get(function, []):
+			if dep in nodevisitor.filtered:
 				taint = True
-				#if dep not in fl.tainted:
-				#	printlambada("AST: dependency {:s} -> {:s} leads to unfiltering".format(function, dep))
-				#	taint = False
-				if taint:
-					fl.tainted.append(dep)
-	return fl.tainted, fl.args, fl.bodies, fl.deps, fl.features, fl.classes, fl.cfcs
 
-def moveinternal(moveglobals, function, arguments, body, local, imports, dependencies, tainted, features, debug, globalvars, cfc, provider = providers.AWSLambda()):
+				if taint:
+					nodevisitor.tainted.append(dep)
+	return nodevisitor.tainted, nodevisitor.args, nodevisitor.bodies, nodevisitor.deps, nodevisitor.features, nodevisitor.classes, nodevisitor.cloudfunctionconfigs
+
+def moveinternal(moveglobals, function, arguments, body, local, imports, dependencies, tainted, features, debug, globalvars, cloudfunctionconfig, provider = providers.AWSLambda()):
 
 	if not local:
 		cloudfunctions = provider.getCloudFunctions()
@@ -59,41 +57,40 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 
 	def pack(x):
 		return "\"{:s}\": {:s}".format(x, x)
+	
 	def unpack(x):
-		#return "{:s} = float(event[\"{:s}\"])".format(x, x)
 		return "{:s} = {:s}[\"{:s}\"]".format(provider.getArgsVariable, x, x)
 
 	parameters = arguments.get(function, [])
 	unpackparameters = ";".join(map(unpack, parameters))
 	packedparameters = "{" + ",".join(map(pack, parameters)) + "}"
 
-	t = provider.getTemplate()
-	t = t.replace("FUNCNAME", function)
-	t = t.replace("PROVNAME", provider.getName())
-	t = t.replace("PARAMETERSHEAD", ",".join(parameters))
-	t = t.replace("PACKEDPARAMETERS", packedparameters)
-	t = t.replace("UNPACKPARAMETERS", unpackparameters)
+	template = provider.getTemplate()
+	template = template.replace("FUNCNAME", function)
+	template = template.replace("PROVNAME", provider.getName())
+	template = template.replace("PARAMETERSHEAD", ",".join(parameters))
+	template = template.replace("PACKEDPARAMETERS", packedparameters)
+	template = template.replace("UNPACKPARAMETERS", unpackparameters)
 	#print(t)
 
-	#gencode = "\n\t".join(map(lambda node: codegen.to_source(node, indent_with="\t"), body))
 	gencode = "\n".join(map(lambda node: "\n".join(["\t" + x for x in codegen.to_source(node, indent_with="\t").split("\n")]), body))
-	t = t.replace("FUNCTIONIMPLEMENTATION", gencode[1:])
+	template = template.replace("FUNCTIONIMPLEMENTATION", gencode[1:])
 	#print(t)
 
-	t = t.replace("LOCAL", ("False", "True")[local])
+	template = template.replace("LOCAL", ("False", "True")[local])
 
 	for module in ("json", "subprocess"):
 		if not module in moveglobals:
 			exec("import {:s}".format(module), moveglobals)
 	
 	if debug and not local:
-		print(t)
+		print(template)
 	
-	exec(t, moveglobals)
+	exec(template, moveglobals)
 	#moveglobals[function] = str
 
 	if local:
-		return t
+		return template
 	else:
 		cloudfunction = "{:s}-{:s}".format(function, provider.getName())
 
@@ -107,17 +104,17 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 			if True:
 				tmpdir = tempfile.TemporaryDirectory()
 				filename = "{:s}/{:s}.py".format(tmpdir.name, cloudfunction)
-				f = open(filename, "w")
+				pyfile = open(filename, "w")
 			else:
-				f = tempfile.NamedTemporaryFile(suffix=".py", mode="w")
-				filename = f.name
+				pyfile = tempfile.NamedTemporaryFile(suffix=".py", mode="w")
+				filename = pyfile.name
 
 			if "print" in features.get(function, []):
-				f.write("from __future__ import print_function\n")
-				f.write("__lambadalog = ''\n")
-				f.write("def print(*args, **kwargs):\n")
-				f.write("\tglobal __lambadalog\n")
-				f.write("\t__lambadalog += ''.join([str(arg) for arg in args]) + '\\n'\n")
+				pyfile.write("from __future__ import print_function\n")
+				pyfile.write("__lambadalog = ''\n")
+				pyfile.write("def print(*args, **kwargs):\n")
+				pyfile.write("\tglobal __lambadalog\n")
+				pyfile.write("\t__lambadalog += ''.join([str(arg) for arg in args]) + '\\n'\n")
 			else:
 				# Monadic behaviour: print from dependencies
 				monadic = False
@@ -125,54 +122,54 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 					if "print" in features.get(dep, []):
 							monadic = True
 					if monadic:
-						f.write("__lambadalog = ''\n")
+						pyfile.write("__lambadalog = ''\n")
 
 			# FIXME: workaround, still needed when no print is found anywhere due to template referencing log
-			f.write("__lambadalog = ''\n")
+			pyfile.write("__lambadalog = ''\n")
 
 			# FIXME: module dependencies are global; missing scanned per-method dependencies
 			for importmodule in imports:
-				f.write("import {:s}\n".format(importmodule))
+				pyfile.write("import {:s}\n".format(importmodule))
 
 			for globalvar in globalvars:
-				f.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
+				pyfile.write("{:s} = {:s}\n".format(globalvar[0], globalvar[1]))
 
 			if len(dependencies.get(function, [])) > 0:
-				f.write(provider.getHttpClientTemplate())
+				pyfile.write(provider.getHttpClientTemplate())
 
-			f.write("\n")
+			pyfile.write("\n")
 				
 			for dep in dependencies.get(function, []):
-				f.write("# dep {:s}\n".format(dep))
-				t = provider.getProxyTemplate()
+				pyfile.write("# dep {:s}\n".format(dep))
+				template = provider.getProxyTemplate()
 
 				if monadic:
-					t = provider.getProxyMonadicTemplate()
+					template = provider.getProxyMonadicTemplate()
 
 				depparameters = arguments.get(dep, [])
 				packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
-				t = t.replace("FUNCNAME", dep)
-				t = t.replace("PROVNAME", provider.getName())
-				t = t.replace("PARAMETERSHEAD", ",".join(depparameters))
-				t = t.replace("PACKEDPARAMETERS", packeddepparameters)
-				f.write("{:s}\n".format(t))
-				f.write("\n")
+				template = template.replace("FUNCNAME", dep)
+				template = template.replace("PROVNAME", provider.getName())
+				template = template.replace("PARAMETERSHEAD", ",".join(depparameters))
+				template = template.replace("PACKEDPARAMETERS", packeddepparameters)
+				pyfile.write("{:s}\n".format(template))
+				pyfile.write("\n")
 
-			f.write(provider.getFunctionSignature(cloudfunction))
+			pyfile.write(provider.getFunctionSignature(cloudfunction))
 
-			f.write("\t{:s}\n".format(unpackparameters))
-			f.write("{:s}\n".format(gencode))
-			f.flush()
+			pyfile.write("\t{:s}\n".format(unpackparameters))
+			pyfile.write("{:s}\n".format(gencode))
+			pyfile.flush()
 
-			zf = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
-			zipper = zipfile.ZipFile(zf, mode="w")
-			zipper.write(f.name, arcname=provider.getMainFilename(cloudfunction))
+			tempzip = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
+			zipper = zipfile.ZipFile(tempzip, mode="w")
+			zipper.write(pyfile.name, arcname=provider.getMainFilename(cloudfunction))
 			zipper.close()
-			zipname = zf.name
+			zipname = tempzip.name
 
 			printlambada("deployer: zip {:s} -> {:s}".format(cloudfunction, zipname))
 
-			runcode = provider.getCreationString(cloudfunction, zf, cfc)
+			runcode = provider.getCreationString(cloudfunction, tempzip, cloudfunctionconfig)
 
 			proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
 			proc.wait()
@@ -230,7 +227,7 @@ def move(moveglobals, local=False, module=None, debug=False, annotations=False, 
 				mgvalue = str(mgvalue)
 			globalvars.append((moveglobal, mgvalue))
 	
-	tainted, args, bodies, dependencies, features, classbodies, cfcs = analyse(None, functions, module, annotations, provider)
+	tainted, args, bodies, dependencies, features, classbodies, cloudfunctionconfigs = analyse(None, functions, module, annotations, provider)
 
 	#print("// imports", str(imports))
 
@@ -243,10 +240,9 @@ def move(moveglobals, local=False, module=None, debug=False, annotations=False, 
 			printlambada("skip tainted", function)
 		else:
 			printlambada("move", function)
-			t = moveinternal(moveglobals, function, args, bodies.get(function, []), local, imports, dependencies, tainted, features, debug, globalvars, cfcs.get(function, None), provider)
-			if t:
-				tsource += t
-		#analyse(function)
+			filledtemplate = moveinternal(moveglobals, function, args, bodies.get(function, []), local, imports, dependencies, tainted, features, debug, globalvars, cloudfunctionconfigs.get(function, None), provider)
+			if filledtemplate:
+				tsource += filledtemplate
 	
 	#moveglobals["complextrig"] = complextrigmod
 
