@@ -8,10 +8,11 @@ from lambadalib import visitors
 def color(s):
     return "\033[33m" + s + "\033[0m"
 
-# Accepted arguments as providers. The first value will be default
+# Accepted arguments as providers
 PROVIDERS = ['lambda', 'whisk', 'ibm', 'google', 'fission']
+DEFAULTPROVIDER = PROVIDERS[0]
 
-def getProvider(provider, providerargs):
+def getProvider(provider=DEFAULTPROVIDER, providerargs={}):
     if not provider or provider == PROVIDERS[0]:
         return AWSLambda(providerargs)
     elif provider == PROVIDERS[1]:
@@ -22,6 +23,8 @@ def getProvider(provider, providerargs):
         return GoogleCloud(providerargs)
     elif provider == PROVIDERS[4]:
         return Fission(providerargs)
+    else:
+        raise Exception("Provider {:s} not supported".format(provider))
     
 class Provider(ABC):
 

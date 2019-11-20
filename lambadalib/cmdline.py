@@ -16,11 +16,11 @@ def execute():
 	parser.add_argument('--annotations', dest='annotations', action='store_const', const=True, default=False, help='only consider decorated functions')
 
 	cloudproviders = providers.PROVIDERS
-	defaultprovider = cloudproviders[0]
+	defaultprovider = providers.DEFAULTPROVIDER
 	parser.add_argument('--provider', dest='provider', type=str, choices=cloudproviders, default=defaultprovider, help='Cloud provider: {:s} (default: {:s})'.format(", ".join(cloudproviders), defaultprovider))
 
 	#TODO: Add extra options for each provider and put inside cloudproviderargs
-	##e.g. lamdarolearn for aws
+	##e.g. lambdarolearn for aws
 
 	args = parser.parse_args()
 
@@ -28,15 +28,17 @@ def execute():
 		basemodule = module.replace(".py", "")
 		lambada.printlambada("track module: {:s}".format(basemodule))
 		(fileobj, filename, desc) = imp.find_module(basemodule, ["."])
-		mod = imp.load_module(basemodule, fileobj, filename, desc)
+		loadedmodule = imp.load_module(basemodule, fileobj, filename, desc)
 		fileobj.close()
 
 		try:
-			lambada.move(mod.__dict__, local=args.local, module=filename, debug=args.debug, annotations=args.annotations, cloudprovider=args.provider, cloudproviderargs={"endpoint": args.endpoint})
+			lambada.move(loadedmodule.__dict__, local=args.local, module=filename, debug=args.debug, annotations=args.annotations, cloudprovider=args.provider, cloudproviderargs={"endpoint": args.endpoint})
 		except Exception as e:
 			print("Exception: {:s}".format(str(e)))
+			
 			if args.debug:
 				traceback.print_exc()
+			
 			return 1
 
 	return 0
