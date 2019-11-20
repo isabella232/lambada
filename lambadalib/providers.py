@@ -5,10 +5,6 @@ import zipfile as Zipfile
 from abc import ABC, abstractmethod
 from lambadalib import visitors
 
-def color(s):
-    return "\033[33m" + s + "\033[0m"
-
-# Accepted arguments as providers
 PROVIDERS = ['lambda', 'whisk', 'ibm', 'google', 'fission']
 DEFAULTPROVIDER = PROVIDERS[0]
 
@@ -25,6 +21,11 @@ def getProvider(provider=DEFAULTPROVIDER, providerargs={}):
         return Fission(providerargs)
     else:
         raise Exception("Provider {:s} not supported".format(provider))
+
+def providerPrint(s):
+    orange = "\033[33m"
+    reset = "\033[0m"
+    print(orange, s, reset)
     
 class Provider(ABC):
 
@@ -227,18 +228,18 @@ class AWSLambda(Provider):
 
     def setRole(self):
         if not self.lambdarolearn:
-            print(color("Role not set, trying to read environment variable LAMBDAROLEARN"))
+            providerPrint("Role not set, trying to read environment variable LAMBDAROLEARN")
             self.lambdarolearn = os.getenv("LAMBDAROLEARN")
 		    
             if not self.lambdarolearn:
-                print(color("Environment variable not set, trying to assemble..."))
+                providerPrint("Environment variable not set, trying to assemble...")
                 runcode = "{} sts get-caller-identity --output text --query 'Account'".format(self.getTool())
                 proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
                 stdoutresults = proc.communicate()[0].decode("utf-8").strip()
 			    
                 if len(stdoutresults) == 12:
                     self.lambdarolearn = "arn:aws:iam::{:s}:role/lambda_basic_execution".format(stdoutresults)
-                    print(color(("... assembled", self.lambdarolearn)))
+                    providerPrint("... assembled {:s}".format(self.lambdarolearn))
                     
                 if not self.lambdarolearn:
                     raise Exception("Role not set - check lambdarolearn=... or LAMBDAROLEARN=...")
@@ -785,11 +786,11 @@ class Fission(Provider):
 
     def setRouter(self):
         if not self.router:
-            print(color("Router not set, trying to read environment variable FISSION_ROUTER"))
+            providerPrint("Router not set, trying to read environment variable FISSION_ROUTER")
             self.router = os.getenv("FISSION_ROUTER")
 
             if not self.router:
-                print(color("Environment variable not set, trying to get minikube's ip"))
+                providerPrint("Environment variable not set, trying to get minikube's ip")
                 runcode = "minikube ip"
                 proc = subprocess.Popen(runcode, stdout=subprocess.PIPE, shell=True)
                 stdoutresults = proc.communicate()[0].decode("utf-8").strip()
