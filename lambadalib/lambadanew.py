@@ -23,7 +23,7 @@ def lambadamonad(s):
 	reset = "\033[0;0m"
 	print(green, "»» Lambada Monad:", s, reset)
 
-def analyse(functionname, functions, module, annotations, provider):
+def analyse(functions, module, annotations, provider):
 	if not module:
 		modulename = inspect.stack()[-1][1]
 		printlambada("targeting", modulename, "...")
@@ -32,13 +32,15 @@ def analyse(functionname, functions, module, annotations, provider):
 
 	modulestring = open(modulename).read()
 	tree = ast.parse(modulestring, modulename)
-	nodevisitor = provider.getNodeVisitor(functionname, functions, annotations)
+	nodevisitor = provider.getNodeVisitor(functions=functions, annotations=annotations)
 	nodevisitor.visit(tree)
+	
 	for function in functions:
 		for dep in nodevisitor.deps.get(function, []):
 			if dep in nodevisitor.tainted:
 				printlambada("AST: dependency {:s} -> {:s} leads to tainting".format(function, dep))
 				nodevisitor.tainted.append(function)
+	
 	for function in functions:
 		for dep in nodevisitor.deps.get(function, []):
 			if dep in nodevisitor.filtered:
@@ -46,6 +48,7 @@ def analyse(functionname, functions, module, annotations, provider):
 
 				if taint:
 					nodevisitor.tainted.append(dep)
+	
 	return nodevisitor.tainted, nodevisitor.args, nodevisitor.bodies, nodevisitor.deps, nodevisitor.features, nodevisitor.classes, nodevisitor.cloudfunctionconfigs
 
 def moveinternal(moveglobals, function, arguments, body, local, imports, dependencies, tainted, features, debug, globalvars, cloudfunctionconfig, provider = providers.AWSLambda()):
@@ -59,7 +62,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 		return "\"{:s}\": {:s}".format(x, x)
 	
 	def unpack(x):
-		return "{:s} = {:s}[\"{:s}\"]".format(provider.getArgsVariable, x, x)
+		return "{:s} = {:s}[\"{:s}\"]".format(x, provider.getArgsVariable(), x)
 
 	parameters = arguments.get(function, [])
 	unpackparameters = ";".join(map(unpack, parameters))
@@ -71,11 +74,9 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 	template = template.replace("PARAMETERSHEAD", ",".join(parameters))
 	template = template.replace("PACKEDPARAMETERS", packedparameters)
 	template = template.replace("UNPACKPARAMETERS", unpackparameters)
-	#print(t)
 
 	gencode = "\n".join(map(lambda node: "\n".join(["\t" + x for x in codegen.to_source(node, indent_with="\t").split("\n")]), body))
 	template = template.replace("FUNCTIONIMPLEMENTATION", gencode[1:])
-	#print(t)
 
 	template = template.replace("LOCAL", ("False", "True")[local])
 
@@ -227,7 +228,7 @@ def move(moveglobals, local=False, module=None, debug=False, annotations=False, 
 				mgvalue = str(mgvalue)
 			globalvars.append((moveglobal, mgvalue))
 	
-	tainted, args, bodies, dependencies, features, classbodies, cloudfunctionconfigs = analyse(None, functions, module, annotations, provider)
+	tainted, args, bodies, dependencies, features, classbodies, cloudfunctionconfigs = analyse(functions, module, annotations, provider)
 
 	#print("// imports", str(imports))
 

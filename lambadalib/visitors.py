@@ -19,7 +19,7 @@ class CloudFunctionConfiguration:
 		return self.__str__()
 
 class FuncListener(ast.NodeVisitor):
-	def __init__(self, functionname, functions, annotations):
+	def __init__(self, functions, annotations, functionname=None):
 		ast.NodeVisitor.__init__(self)
 		self.functionname = functionname
 		self.functions = functions
