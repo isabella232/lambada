@@ -70,7 +70,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 
 	template = provider.getTemplate()
 	template = template.replace("FUNCNAME", function)
-	template = template.replace("PROVNAME", provider.getName())
+	template = template.replace("PROVNAME", provider.getProviderName())
 	template = template.replace("PARAMETERSHEAD", ",".join(parameters))
 	template = template.replace("PACKEDPARAMETERS", packedparameters)
 	template = template.replace("UNPACKPARAMETERS", unpackparameters)
@@ -93,7 +93,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 	if local:
 		return template
 	else:
-		cloudfunction = "{:s}-{:s}".format(function, provider.getName())
+		cloudfunction = provider.getFunctionName(function)
 
 		if cloudfunction in cloudfunctions:
 			printlambada("deployer: already deployed {:s}".format(cloudfunction))
@@ -150,7 +150,7 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 				depparameters = arguments.get(dep, [])
 				packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
 				template = template.replace("FUNCNAME", dep)
-				template = template.replace("PROVNAME", provider.getName())
+				template = template.replace("PROVNAME", provider.getProviderName())
 				template = template.replace("PARAMETERSHEAD", ",".join(depparameters))
 				template = template.replace("PACKEDPARAMETERS", packeddepparameters)
 				pyfile.write("{:s}\n".format(template))

@@ -46,8 +46,11 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def getName(self):
+    def getProviderName(self):
         pass
+
+    def getFunctionName(self, name):
+        return "{:s}_{:s}".format(name, self.getProviderName())
 
     @abstractmethod
     def getFunctionSignature(self, name):
@@ -86,7 +89,7 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def getNodeVisitor(self, functionname, functions, annotations):
+    def getNodeVisitor(self, functions, annotations):
         pass
 
 awstemplate = """
@@ -215,7 +218,7 @@ class AWSLambda(Provider):
     def getTemplate(self):
         return awstemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
-    def getName(self):
+    def getProviderName(self):
         return "lambda"
 
     def getFunctionSignature(self, name):
@@ -285,8 +288,8 @@ class AWSLambda(Provider):
     def getNetproxyTemplate(self):
         return awsnetproxytemplate
 
-    def getNodeVisitor(self, functionname, functions, annotations):
-        return visitors.FuncListener(functionname, functions, annotations)
+    def getNodeVisitor(self, functions, annotations):
+        return visitors.FuncListener(functions, annotations)
 
 whisktemplate = """
 def FUNCNAME_remote(args):
@@ -410,7 +413,7 @@ class OpenWhisk(Provider):
     def getTemplate(self):
         return whisktemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
-    def getName(self):
+    def getProviderName(self):
         return "whisk"
 
     def getFunctionSignature(self, name):
@@ -457,8 +460,8 @@ class OpenWhisk(Provider):
     def getNetproxyTemplate(self):
         return whisknetproxytemplate
 
-    def getNodeVisitor(self, functionname, functions, annotations):
-        return visitors.FuncListener(functionname, functions, annotations)
+    def getNodeVisitor(self, functions, annotations):
+        return visitors.FuncListener(functions, annotations)
 
 class IBMCloud(OpenWhisk):
 
@@ -471,7 +474,7 @@ class IBMCloud(OpenWhisk):
         else:
             return "ibmcloud fn"
 
-    def getName(self):
+    def getProviderName(self):
         return "ibmcloud"
 
 gcloudtemplate = """
@@ -604,7 +607,7 @@ class GoogleCloud(Provider):
     def getTemplate(self):
         return gcloudtemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
-    def getName(self):
+    def getProviderName(self):
         return "gcloud"
 
     def getFunctionSignature(self, name):
@@ -648,8 +651,8 @@ class GoogleCloud(Provider):
     def getNetproxyTemplate(self):
         return gcloudnetproxytemplate
 
-    def getNodeVisitor(self, functionname, functions, annotations):
-        return visitors.FuncListenerGCloud(functionname, functions, annotations)
+    def getNodeVisitor(self, functions, annotations):
+        return visitors.FuncListenerGCloud(functions, annotations)
 
 fissiontemplate = """
 def FUNCNAME_remote(args):
@@ -774,8 +777,11 @@ class Fission(Provider):
     def getTemplate(self):
         return fissiontemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
-    def getName(self):
+    def getProviderName(self):
         return "fission"
+
+    def getFunctionName(self, name):
+        return "{:s}-{:s}".format(name, self.getProviderName())
 
     def getFunctionSignature(self, name):
         #return "def {:s}():\n".format(name)
@@ -840,7 +846,7 @@ class Fission(Provider):
         return template
 
     def getArgsVariable(self):
-        return "request"
+        return "request.get_json()"
 
     def getProxyTemplate(self):
         return fissionproxytemplate
@@ -851,5 +857,5 @@ class Fission(Provider):
     def getNetproxyTemplate(self):
         return fissionnetproxytemplate
 
-    def getNodeVisitor(self, functionname, functions, annotations):
-        return visitors.FuncListenerGCloud(functionname, functions, annotations)
+    def getNodeVisitor(self, functions, annotations):
+        return visitors.FuncListenerGCloud(functions, annotations)
