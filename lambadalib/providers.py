@@ -42,12 +42,15 @@ class Provider(ABC):
         pass
 
     @abstractmethod
-    def getTemplate(self):
+    def getLocalTemplate(self):
         pass
 
     @abstractmethod
     def getProviderName(self):
         pass
+
+    def getImports(self):
+        return None
 
     def getFunctionName(self, name):
         return "{:s}_{:s}".format(name, self.getProviderName())
@@ -55,6 +58,12 @@ class Provider(ABC):
     @abstractmethod
     def getFunctionSignature(self, name):
         pass
+
+    def packparameter(self, parameter):
+        return "\"{:s}\": {:s}".format(parameter, parameter)
+
+    def unpackparameter(self, parameter):
+        return "{:s} = {:s}[\"{:s}\"]".format(parameter, self.getArgsVariable(), parameter)
 
     @abstractmethod
     def getMainFilename(self, name):
@@ -92,7 +101,7 @@ class Provider(ABC):
     def getNodeVisitor(self, functions, annotations):
         pass
 
-awstemplate = """
+awslocaltemplate = """
 def FUNCNAME_remote(event, context):
 	UNPACKPARAMETERS
 	FUNCTIONIMPLEMENTATION
@@ -215,8 +224,8 @@ class AWSLambda(Provider):
         
         return cloudfunctions
 
-    def getTemplate(self):
-        return awstemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
+    def getLocalTemplate(self):
+        return awslocaltemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
     def getProviderName(self):
         return "lambda"
@@ -410,7 +419,7 @@ class OpenWhisk(Provider):
         
         return cloudfunctions
 
-    def getTemplate(self):
+    def getLocalTemplate(self):
         return whisktemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
     def getProviderName(self):
@@ -476,6 +485,10 @@ class IBMCloud(OpenWhisk):
 
     def getProviderName(self):
         return "ibmcloud"
+
+gcloudimports = """
+from flask import jsonify
+"""
 
 gcloudtemplate = """
 def FUNCNAME_remote(args):
@@ -604,11 +617,14 @@ class GoogleCloud(Provider):
         
         return cloudfunctions
 
-    def getTemplate(self):
+    def getLocalTemplate(self):
         return gcloudtemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
     def getProviderName(self):
         return "gcloud"
+
+    def getImports(self):
+        return gcloudimports
 
     def getFunctionSignature(self, name):
         return "def {:s}(request):\n".format(name)
@@ -653,6 +669,11 @@ class GoogleCloud(Provider):
 
     def getNodeVisitor(self, functions, annotations):
         return visitors.FuncListenerGCloud(functions, annotations)
+
+fissionimports = """
+from flask import request
+from flask import jsonify
+"""
 
 fissiontemplate = """
 def FUNCNAME_remote(args):
@@ -774,21 +795,26 @@ class Fission(Provider):
         
         return cloudfunctions
 
-    def getTemplate(self):
+    def getLocalTemplate(self):
         return fissiontemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
     def getProviderName(self):
         return "fission"
 
+    def getImports(self):
+        return fissionimports
+
     def getFunctionName(self, name):
         return "{:s}-{:s}".format(name, self.getProviderName())
 
     def getFunctionSignature(self, name):
-        #return "def {:s}():\n".format(name)
         return "def main():\n"
 
+    def unpackparameter(self, parameter):
+        return "{:s} = {:s}.get(\"{:s}\")".format(parameter, self.getArgsVariable(), parameter)
+
     def getMainFilename(self, name):
-        return "{:s}-fission.py".format(name)
+        return "{:s}.py".format(name)
 
     def setRouter(self):
         IPLENGTH = 15
@@ -846,7 +872,7 @@ class Fission(Provider):
         return template
 
     def getArgsVariable(self):
-        return "request.get_json()"
+        return "request.args"
 
     def getProxyTemplate(self):
         return fissionproxytemplate

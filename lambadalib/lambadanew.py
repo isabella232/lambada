@@ -58,17 +58,17 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 	else:
 		cloudfunctions = None
 
-	def pack(x):
-		return "\"{:s}\": {:s}".format(x, x)
+	# def pack(x):
+	# 	return "\"{:s}\": {:s}".format(x, x)
 	
-	def unpack(x):
-		return "{:s} = {:s}[\"{:s}\"]".format(x, provider.getArgsVariable(), x)
+	# def unpack(x):
+	# 	return "{:s} = {:s}[\"{:s}\"]".format(x, provider.getArgsVariable(), x)
 
 	parameters = arguments.get(function, [])
-	unpackparameters = ";".join(map(unpack, parameters))
-	packedparameters = "{" + ",".join(map(pack, parameters)) + "}"
+	unpackparameters = ";".join(map(provider.unpackparameter, parameters))
+	packedparameters = "{" + ",".join(map(provider.packparameter, parameters)) + "}"
 
-	template = provider.getTemplate()
+	template = provider.getLocalTemplate()
 	template = template.replace("FUNCNAME", function)
 	template = template.replace("PROVNAME", provider.getProviderName())
 	template = template.replace("PARAMETERSHEAD", ",".join(parameters))
@@ -148,13 +148,18 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 					template = provider.getProxyMonadicTemplate()
 
 				depparameters = arguments.get(dep, [])
-				packeddepparameters = "{" + ",".join(map(pack, depparameters)) + "}"
+				packeddepparameters = "{" + ",".join(map(provider.packparameter, depparameters)) + "}"
 				template = template.replace("FUNCNAME", dep)
 				template = template.replace("PROVNAME", provider.getProviderName())
 				template = template.replace("PARAMETERSHEAD", ",".join(depparameters))
 				template = template.replace("PACKEDPARAMETERS", packeddepparameters)
 				pyfile.write("{:s}\n".format(template))
 				pyfile.write("\n")
+
+			functionimports = provider.getImports()
+
+			if functionimports:
+				pyfile.write("{:s}\n".format(functionimports))
 
 			pyfile.write(provider.getFunctionSignature(cloudfunction))
 

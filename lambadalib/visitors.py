@@ -201,10 +201,9 @@ class FuncListenerGCloud(FuncListener):
 					returnstatement = ast.Return(ast.Name("ret", ast.Load()))
 					globalstatement = ast.Global(["__lambadalog"])
 					resetlog = ast.Assign([ast.Name("__lambadalog", ast.Store())], ast.Str(""))
-					importflask = ast.ImportFrom("flask", [ast.alias(name='jsonify', asname=None)], 0)
 			
 					# FIXME: always assume log because here the monadic situation through dependencies is not yet clear
-					newbody = [importflask, globalstatement] + newbody + [assignret, changeret, resetlog, returnstatement]
+					newbody = [globalstatement] + newbody + [assignret, changeret, resetlog, returnstatement]
 				else:
 					newbody.append(linekind)
 			
