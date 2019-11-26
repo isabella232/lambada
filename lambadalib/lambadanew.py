@@ -156,15 +156,12 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 				pyfile.write("{:s}\n".format(template))
 				pyfile.write("\n")
 
-			functionimports = provider.getImports()
-
-			if functionimports:
-				pyfile.write("{:s}\n".format(functionimports))
-
-			pyfile.write(provider.getFunctionSignature(cloudfunction))
-
-			pyfile.write("\t{:s}\n".format(unpackparameters))
-			pyfile.write("{:s}\n".format(gencode))
+			functiontemplate = provider.getFunctionTemplate()
+			functiontemplate = functiontemplate.replace("FUNCNAME", cloudfunction)
+			functiontemplate = functiontemplate.replace("UNPACKPARAMETERS", unpackparameters)
+			functiontemplate = functiontemplate.replace("FUNCTIONIMPLEMENTATION", gencode[1:])
+			
+			pyfile.write(functiontemplate)
 			pyfile.flush()
 
 			tempzip = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))

@@ -49,21 +49,18 @@ class Provider(ABC):
     def getProviderName(self):
         pass
 
-    def getImports(self):
-        return None
-
     def getFunctionName(self, name):
         return "{:s}_{:s}".format(name, self.getProviderName())
-
-    @abstractmethod
-    def getFunctionSignature(self, name):
-        pass
 
     def packparameter(self, parameter):
         return "\"{:s}\": {:s}".format(parameter, parameter)
 
     def unpackparameter(self, parameter):
         return "{:s} = {:s}[\"{:s}\"]".format(parameter, self.getArgsVariable(), parameter)
+
+    @abstractmethod
+    def getFunctionTemplate(self):
+        pass
 
     @abstractmethod
     def getMainFilename(self, name):
@@ -100,6 +97,12 @@ class Provider(ABC):
     @abstractmethod
     def getNodeVisitor(self, functions, annotations):
         pass
+
+awsfunctiontemplate = """
+def FUNCNAME(event, context):
+	UNPACKPARAMETERS
+	FUNCTIONIMPLEMENTATION
+"""
 
 awslocaltemplate = """
 def FUNCNAME_remote(event, context):
@@ -230,8 +233,8 @@ class AWSLambda(Provider):
     def getProviderName(self):
         return "lambda"
 
-    def getFunctionSignature(self, name):
-        return "def {:s}(event, context):\n".format(name)
+    def getFunctionTemplate(self, name):
+        return awsfunctiontemplate
 
     def getMainFilename(self, name):
         return "{:s}.py".format(name)
@@ -299,6 +302,12 @@ class AWSLambda(Provider):
 
     def getNodeVisitor(self, functions, annotations):
         return visitors.FuncListener(functions, annotations)
+
+whiskfunctiontemplate = """
+def FUNCNAME(args):
+	UNPACKPARAMETERS
+	FUNCTIONIMPLEMENTATION
+"""
 
 whisktemplate = """
 def FUNCNAME_remote(args):
@@ -425,8 +434,8 @@ class OpenWhisk(Provider):
     def getProviderName(self):
         return "whisk"
 
-    def getFunctionSignature(self, name):
-        return "def {:s}(args):\n".format(name)
+    def getFunctionTemplate(self):
+        return whiskfunctiontemplate
 
     def getMainFilename(self, name):
         return "__main__.py"
@@ -486,8 +495,19 @@ class IBMCloud(OpenWhisk):
     def getProviderName(self):
         return "ibmcloud"
 
-gcloudimports = """
+gcloudfunctiontemplate = """
 from flask import jsonify
+
+def FUNCNAME(request):
+	requestargs = {}
+
+	if request.get_json(silent=True):
+		requestargs = request.get_json(silent=True)
+	elif request.args:
+		requestargs = request.args
+
+	UNPACKPARAMETERS
+	FUNCTIONIMPLEMENTATION
 """
 
 gcloudtemplate = """
@@ -586,7 +606,6 @@ def netproxy_handler(args):
 	return n
 """
 
-
 class GoogleCloud(Provider):
 
     def __init__(self, providerargs={}):
@@ -623,11 +642,11 @@ class GoogleCloud(Provider):
     def getProviderName(self):
         return "gcloud"
 
-    def getImports(self):
-        return gcloudimports
+    def unpackparameter(self, parameter):
+        return "{:s} = {:s}.get(\"{:s}\")".format(parameter, self.getArgsVariable(), parameter)
 
-    def getFunctionSignature(self, name):
-        return "def {:s}(request):\n".format(name)
+    def getFunctionTemplate(self):
+        return gcloudfunctiontemplate
 
     def getMainFilename(self, name):
         return "main.py"
@@ -656,7 +675,7 @@ class GoogleCloud(Provider):
         return template
 
     def getArgsVariable(self):
-        return "request"
+        return "requestargs"
 
     def getProxyTemplate(self):
         return gcloudproxytemplate
@@ -670,12 +689,23 @@ class GoogleCloud(Provider):
     def getNodeVisitor(self, functions, annotations):
         return visitors.FuncListenerGCloud(functions, annotations)
 
-fissionimports = """
+fissionfunctiontemplate = """
 from flask import request
 from flask import jsonify
+
+def main():
+	requestargs = {}
+
+	if request.get_json(silent=True):
+		requestargs = request.get_json(silent=True)
+	elif request.args:
+		requestargs = request.args
+
+	UNPACKPARAMETERS
+	FUNCTIONIMPLEMENTATION
 """
 
-fissiontemplate = """
+fissionlocaltemplate = """
 def FUNCNAME_remote(args):
 	UNPACKPARAMETERS
 	FUNCTIONIMPLEMENTATION
@@ -796,22 +826,19 @@ class Fission(Provider):
         return cloudfunctions
 
     def getLocalTemplate(self):
-        return fissiontemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
+        return fissionlocaltemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
     def getProviderName(self):
         return "fission"
 
-    def getImports(self):
-        return fissionimports
-
     def getFunctionName(self, name):
         return "{:s}-{:s}".format(name, self.getProviderName())
 
-    def getFunctionSignature(self, name):
-        return "def main():\n"
-
     def unpackparameter(self, parameter):
         return "{:s} = {:s}.get(\"{:s}\")".format(parameter, self.getArgsVariable(), parameter)
+
+    def getFunctionTemplate(self):
+        return fissionfunctiontemplate
 
     def getMainFilename(self, name):
         return "{:s}.py".format(name)
@@ -872,7 +899,7 @@ class Fission(Provider):
         return template
 
     def getArgsVariable(self):
-        return "request.args"
+        return "requestargs"
 
     def getProxyTemplate(self):
         return fissionproxytemplate
