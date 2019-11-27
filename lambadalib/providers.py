@@ -309,7 +309,7 @@ def FUNCNAME(args):
 	FUNCTIONIMPLEMENTATION
 """
 
-whisktemplate = """
+whisklocaltemplate = """
 def FUNCNAME_remote(args):
 	UNPACKPARAMETERS
 	FUNCTIONIMPLEMENTATION
@@ -429,10 +429,13 @@ class OpenWhisk(Provider):
         return cloudfunctions
 
     def getLocalTemplate(self):
-        return whisktemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
+        return whisklocaltemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
     def getProviderName(self):
         return "whisk"
+
+    def unpackparameter(self, parameter):
+        return "{:s} = {:s}.get(\"{:s}\")".format(parameter, self.getArgsVariable(), parameter)
 
     def getFunctionTemplate(self):
         return whiskfunctiontemplate
@@ -510,8 +513,12 @@ def FUNCNAME(request):
 	FUNCTIONIMPLEMENTATION
 """
 
-gcloudtemplate = """
+gcloudlocaltemplate = """
+from flask import jsonify
+
 def FUNCNAME_remote(args):
+	requestargs = args
+
 	UNPACKPARAMETERS
 	FUNCTIONIMPLEMENTATION
 
@@ -528,7 +535,7 @@ def FUNCNAME(PARAMETERSHEAD):
 		jsonoutput = FUNCNAME_stub(jsoninput)
 	else:
 		functionname = "FUNCNAME_PROVNAME"
-		runcode = [CLOUDTOOL, "action", "invoke", functionname, "--param-file", jsoninput, "--result"]
+		runcode = [CLOUDTOOL, "call", functionname, "--data", "'{:s}'".format(jsoninput), "--result"]
 		proc = subprocess.Popen(runcode, stdout=subprocess.PIPE)
 		stdoutresults = proc.communicate()[0].decode("utf-8")
 		jsonoutput = json.dumps(stdoutresults)
@@ -637,7 +644,7 @@ class GoogleCloud(Provider):
         return cloudfunctions
 
     def getLocalTemplate(self):
-        return gcloudtemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
+        return gcloudlocaltemplate.replace("CLOUDTOOL", ",".join(["\"" + x + "\"" for x in self.getTool().split(" ")]))
 
     def getProviderName(self):
         return "gcloud"
@@ -707,6 +714,8 @@ def main():
 
 fissionlocaltemplate = """
 def FUNCNAME_remote(args):
+	requestargs = args
+
 	UNPACKPARAMETERS
 	FUNCTIONIMPLEMENTATION
 

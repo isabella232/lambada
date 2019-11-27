@@ -164,6 +164,9 @@ def moveinternal(moveglobals, function, arguments, body, local, imports, depende
 			pyfile.write(functiontemplate)
 			pyfile.flush()
 
+			if debug and not local:
+				print(functiontemplate)
+
 			tempzip = tempfile.NamedTemporaryFile(prefix="lambada_", suffix="_{:s}.zip".format(function))
 			zipper = zipfile.ZipFile(tempzip, mode="w")
 			zipper.write(pyfile.name, arcname=provider.getMainFilename(cloudfunction))
