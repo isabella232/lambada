@@ -66,9 +66,7 @@ class FuncListener(ast.NodeVisitor):
 
 		node.value = d
 
-	def visit_FunctionDef(self, node):
-		self.currentfunction = node.name
-
+	def visit_annotations(self, node):
 		if self.annotations:
 			if node.name == "cloudfunction":
 				self.generic_visit(node)
@@ -98,7 +96,8 @@ class FuncListener(ast.NodeVisitor):
 				visitorPrint(("AST: no annotation @ {:s}".format(node.name)))
 				self.generic_visit(node)
 				self.filtered.append(node.name)
-
+	
+	def visit_inputs_and_prints(self, node):
 		if self.functionname == None or node.name == self.functionname:
 			for arg in node.args.args:
 				pass
@@ -113,6 +112,7 @@ class FuncListener(ast.NodeVisitor):
 					elif linekind.value.func.id in ("print",):
 						self.features.setdefault(node.name, []).append("print")
 
+	def visit_body(self, node):
 		if not node.name in self.tainted:
 			for arg in node.args.args:
 				self.args.setdefault(node.name, []).append(arg.arg)
@@ -134,58 +134,16 @@ class FuncListener(ast.NodeVisitor):
 					newbody.append(linekind)
 		
 			self.bodies[node.name] = newbody
-		
+
+	def visit_FunctionDef(self, node):
+		self.currentfunction = node.name
+		self.visit_annotations(node)
+		self.visit_inputs_and_prints(node)
+		self.visit_body(node)
 		self.generic_visit(node)
 
 class FuncListenerGCloud(FuncListener):
-	def visit_FunctionDef(self, node):
-		self.currentfunction = node.name
-
-		if self.annotations:
-			if node.name == "cloudfunction":
-				self.generic_visit(node)
-			
-			cloudfunctionconfig = CloudFunctionConfiguration()
-			
-			for name in node.decorator_list:
-				if "id" in dir(name):
-					if name.id == "cloudfunction":
-						cloudfunctionconfig.enabled = True
-				else:
-					if name.func.id == "cloudfunction":
-						cloudfunctionconfig.enabled = True
-
-						for keyword in name.keywords:
-							if keyword.arg == "memory":
-								cloudfunctionconfig.memory = keyword.value.n
-							elif keyword.arg == "region":
-								cloudfunctionconfig.region = keyword.value.s
-							elif keyword.arg == "duration":
-								cloudfunctionconfig.duration = keyword.value.n
-
-			if cloudfunctionconfig.enabled:
-				visitorPrint(("AST: annotation {:s} @ {:s}".format(cloudfunctionconfig, node.name)))
-				self.cloudfunctionconfigs[node.name] = cloudfunctionconfig
-			else:
-				visitorPrint(("AST: no annotation @ {:s}".format(node.name)))
-				self.generic_visit(node)
-				self.filtered.append(node.name)
-
-		if self.functionname == None or node.name == self.functionname:
-			for arg in node.args.args:
-				pass
-			
-			for linekind in node.body:
-				if isinstance(linekind, ast.Expr):
-					if not "func" in dir(linekind.value) or not "id" in dir(linekind.value.func):
-						# corner cases
-						continue
-
-					if linekind.value.func.id in ("input",):
-						self.tainted.append(node.name)
-					elif linekind.value.func.id in ("print",):
-						self.features.setdefault(node.name, []).append("print")
-
+	def visit_body(self, node):
 		if not node.name in self.tainted:
 			for arg in node.args.args:
 				self.args.setdefault(node.name, []).append(arg.arg)
@@ -208,9 +166,6 @@ class FuncListenerGCloud(FuncListener):
 					newbody.append(linekind)
 			
 			self.bodies[node.name] = newbody
-
-		self.generic_visit(node)
-	
 	
 	def visit_Return(self, node):
 		t = ast.Tuple(node.value, ast.Name("__lambadalog", ast.Load()))
