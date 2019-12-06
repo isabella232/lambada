@@ -13,7 +13,8 @@ wrapped into proxy classes for stateful access to individual methods as
 functions.
 
 Supported FaaS providers: AWS Lambda, IBM Cloud Functions (+ OpenWhisk),
-Google Cloud Functions. Select via --provider {lambda,whisk,ibm,google}.
+Google Cloud Functions, and Fission. Select via --provider
+{lambda,whisk,ibm,google}.
 
 Using function decorators in conjunction with the command line option
 --annotations, functions can be turned into cloud functions selectively
@@ -30,7 +31,7 @@ General instructions:
 
 Instructions for local mode:
 - Run Lambada with --local (and if you prefer with --debug also)
-- It will create copies of files suffixed with _lambdafied.py
+- It will create copies of files suffixed with _lambdafied.py or similar
 
 Instructions for local/remote mode and self-hosted Snafu or OpenWhisk:
 - Run Lambada with --endpoint http://localhost:10000
